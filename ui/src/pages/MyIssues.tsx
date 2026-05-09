@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { issuesApi } from "../api/issues";
 import { useCompany } from "../context/CompanyContext";
 import { useBreadcrumbs } from "../context/BreadcrumbContext";
+import { useLanguage } from "../context/LanguageContext";
 import { queryKeys } from "../lib/queryKeys";
 import { StatusIcon } from "../components/StatusIcon";
 
@@ -15,10 +16,11 @@ import { ListTodo } from "lucide-react";
 export function MyIssues() {
   const { selectedCompanyId } = useCompany();
   const { setBreadcrumbs } = useBreadcrumbs();
+  const { t } = useLanguage();
 
   useEffect(() => {
-    setBreadcrumbs([{ label: "My Issues" }]);
-  }, [setBreadcrumbs]);
+    setBreadcrumbs([{ label: t("我的任务", "My Tasks") }]);
+  }, [setBreadcrumbs, t]);
 
   const { data: issues, isLoading, error } = useQuery({
     queryKey: queryKeys.issues.list(selectedCompanyId!),
@@ -27,7 +29,7 @@ export function MyIssues() {
   });
 
   if (!selectedCompanyId) {
-    return <EmptyState icon={ListTodo} message="Select a company to view your issues." />;
+    return <EmptyState icon={ListTodo} message={t("请选择公司以查看你的任务。", "Select a company to view your tasks.")} />;
   }
 
   if (isLoading) {
@@ -44,7 +46,7 @@ export function MyIssues() {
       {error && <p className="text-sm text-destructive">{error.message}</p>}
 
       {myIssues.length === 0 && (
-        <EmptyState icon={ListTodo} message="No issues assigned to you." />
+        <EmptyState icon={ListTodo} message={t("没有分配给你的任务。", "No tasks assigned to you.")} />
       )}
 
       {myIssues.length > 0 && (

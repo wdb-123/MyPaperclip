@@ -18,11 +18,22 @@ import { PageTabBar } from "../components/PageTabBar";
 import { Tabs } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { Bot, Plus, List, GitBranch, SlidersHorizontal } from "lucide-react";
-import { AGENT_ROLE_LABELS, type Agent } from "@paperclipai/shared";
+import type { Agent } from "@paperclipai/shared";
+import { useLanguage } from "../context/LanguageContext";
 
 import { getAdapterLabel } from "../adapters/adapter-display-registry";
 
-const roleLabels = AGENT_ROLE_LABELS as Record<string, string>;
+const stableRoleLabels: Record<string, string> = {
+  ceo: "CEO",
+  cto: "CTO",
+  cmo: "CMO",
+  cfo: "CFO",
+};
+
+function useAgentRoleLabel() {
+  const { t } = useLanguage();
+  return (role: string) => stableRoleLabels[role] ?? t(`agent.role.${role}`);
+}
 
 type FilterTab = "all" | "active" | "paused" | "error";
 
@@ -64,6 +75,8 @@ export function Agents() {
   const { selectedCompanyId } = useCompany();
   const { openNewAgent } = useDialogActions();
   const { setBreadcrumbs } = useBreadcrumbs();
+  const { t } = useLanguage();
+  const roleLabel = useAgentRoleLabel();
   const navigate = useNavigate();
   const location = useLocation();
   const { isMobile } = useSidebar();
@@ -116,11 +129,11 @@ export function Agents() {
   }, [agents]);
 
   useEffect(() => {
-    setBreadcrumbs([{ label: "Agents" }]);
-  }, [setBreadcrumbs]);
+    setBreadcrumbs([{ label: t("agent.breadcrumb.agents") }]);
+  }, [setBreadcrumbs, t]);
 
   if (!selectedCompanyId) {
-    return <EmptyState icon={Bot} message="Select a company to view agents." />;
+    return <EmptyState icon={Bot} message={t("agent.list.selectCompany")} />;
   }
 
   if (isLoading) {
@@ -136,10 +149,10 @@ export function Agents() {
         <Tabs value={tab} onValueChange={(v) => navigate(`/agents/${v}`)}>
           <PageTabBar
             items={[
-              { value: "all", label: "All" },
-              { value: "active", label: "Active" },
-              { value: "paused", label: "Paused" },
-              { value: "error", label: "Error" },
+              { value: "all", label: t("agent.list.filter.all") },
+              { value: "active", label: t("agent.list.filter.active") },
+              { value: "paused", label: t("agent.list.filter.paused") },
+              { value: "error", label: t("agent.list.filter.error") },
             ]}
             value={tab}
             onValueChange={(v) => navigate(`/agents/${v}`)}
@@ -156,7 +169,7 @@ export function Agents() {
               onClick={() => setFiltersOpen(!filtersOpen)}
             >
               <SlidersHorizontal className="h-3 w-3" />
-              Filters
+              {t("agent.list.filters")}
               {showTerminated && <span className="ml-0.5 px-1 bg-foreground/10 rounded text-[10px]">1</span>}
             </button>
             {filtersOpen && (
@@ -171,7 +184,7 @@ export function Agents() {
                   )}>
                     {showTerminated && <span className="text-background text-[10px] leading-none">&#10003;</span>}
                   </span>
-                  Show terminated
+                  {t("agent.list.showTerminated")}
                 </button>
               </div>
             )}
@@ -201,13 +214,13 @@ export function Agents() {
           )}
           <Button size="sm" variant="outline" onClick={openNewAgent}>
             <Plus className="h-3.5 w-3.5 mr-1.5" />
-            New Agent
+            {t("agent.action.new")}
           </Button>
         </div>
       </div>
 
       {filtered.length > 0 && (
-        <p className="text-xs text-muted-foreground">{filtered.length} agent{filtered.length !== 1 ? "s" : ""}</p>
+        <p className="text-xs text-muted-foreground">{t("agent.list.count", { count: filtered.length, plural: filtered.length !== 1 ? "s" : "" })}</p>
       )}
 
       {error && <p className="text-sm text-destructive">{error.message}</p>}
@@ -215,8 +228,8 @@ export function Agents() {
       {agents && agents.length === 0 && (
         <EmptyState
           icon={Bot}
-          message="Create your first agent to get started."
-          action="New Agent"
+          message={t("agent.list.empty")}
+          action={t("agent.action.new")}
           onAction={openNewAgent}
         />
       )}
@@ -229,7 +242,7 @@ export function Agents() {
               <EntityRow
                 key={agent.id}
                 title={agent.name}
-                subtitle={`${roleLabels[agent.role] ?? agent.role}${agent.title ? ` - ${agent.title}` : ""}`}
+                subtitle={`${roleLabel(agent.role)}${agent.title ? ` - ${agent.title}` : ""}`}
                 to={agentUrl(agent)}
                 className={agent.pausedAt && tab !== "paused" ? "opacity-50" : ""}
                 leading={
@@ -286,7 +299,7 @@ export function Agents() {
 
       {effectiveView === "list" && agents && agents.length > 0 && filtered.length === 0 && (
         <p className="text-sm text-muted-foreground text-center py-8">
-          No agents match the selected filter.
+          {t("agent.list.noFilterMatch")}
         </p>
       )}
 
@@ -301,13 +314,13 @@ export function Agents() {
 
       {effectiveView === "org" && orgTree && orgTree.length > 0 && filteredOrg.length === 0 && (
         <p className="text-sm text-muted-foreground text-center py-8">
-          No agents match the selected filter.
+          {t("agent.list.noFilterMatch")}
         </p>
       )}
 
       {effectiveView === "org" && orgTree && orgTree.length === 0 && (
         <p className="text-sm text-muted-foreground text-center py-8">
-          No organizational hierarchy defined.
+          {t("agent.list.noOrg")}
         </p>
       )}
     </div>
@@ -328,6 +341,7 @@ function OrgTreeNode({
   tab: FilterTab;
 }) {
   const agent = agentMap.get(node.id);
+  const { t } = useLanguage();
 
   const statusColor = agentStatusDot[node.status] ?? agentStatusDotDefault;
 
@@ -343,7 +357,7 @@ function OrgTreeNode({
         <div className="flex-1 min-w-0">
           <span className="text-sm font-medium">{node.name}</span>
           <span className="text-xs text-muted-foreground ml-2">
-            {roleLabels[node.role] ?? node.role}
+            {stableRoleLabels[node.role] ?? t(`agent.role.${node.role}`)}
             {agent?.title ? ` - ${agent.title}` : ""}
           </span>
         </div>
@@ -409,6 +423,8 @@ function LiveRunIndicator({
   runId: string;
   liveCount: number;
 }) {
+  const { t } = useLanguage();
+
   return (
     <Link
       to={`/agents/${agentRef}/runs/${runId}`}
@@ -420,7 +436,7 @@ function LiveRunIndicator({
         <span className="relative inline-flex rounded-full h-2 w-2 bg-blue-500" />
       </span>
       <span className="text-[11px] font-medium text-blue-600 dark:text-blue-400">
-        Live{liveCount > 1 ? ` (${liveCount})` : ""}
+        {t("agent.list.live", { count: liveCount > 1 ? ` (${liveCount})` : "" })}
       </span>
     </Link>
   );

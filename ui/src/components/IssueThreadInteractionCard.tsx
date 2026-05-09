@@ -60,9 +60,9 @@ function resolveActorLabel(args: {
     return agentMap?.get(agentId)?.name ?? agentId.slice(0, 8);
   }
   if (userId) {
-    return formatAssigneeUserLabel(userId, currentUserId, userLabelMap) ?? "Board";
+    return formatAssigneeUserLabel(userId, currentUserId, userLabelMap) ?? "董事会";
   }
-  return "Unknown";
+  return "未知";
 }
 
 function statusLabel(status: IssueThreadInteraction["status"]) {

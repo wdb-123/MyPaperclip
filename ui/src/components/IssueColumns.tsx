@@ -19,33 +19,34 @@ import { cn } from "../lib/utils";
 import { timeAgo } from "../lib/timeAgo";
 import { Identity } from "./Identity";
 import { StatusIcon } from "./StatusIcon";
+import { useLanguage, type AppLanguage } from "../context/LanguageContext";
 
 export const issueTrailingColumns: InboxIssueColumn[] = ["assignee", "project", "workspace", "parent", "labels", "updated"];
 
-const issueColumnLabels: Record<InboxIssueColumn, string> = {
-  status: "Status",
-  id: "ID",
-  assignee: "Assignee",
-  project: "Project",
-  workspace: "Workspace",
-  parent: "Parent issue",
-  labels: "Tags",
-  updated: "Last updated",
+const issueColumnLabels: Record<InboxIssueColumn, Record<AppLanguage, string>> = {
+  status: { zh: "状态", en: "Status" },
+  id: { zh: "ID", en: "ID" },
+  assignee: { zh: "负责人", en: "Assignee" },
+  project: { zh: "项目", en: "Project" },
+  workspace: { zh: "工作区", en: "Workspace" },
+  parent: { zh: "父任务", en: "Parent task" },
+  labels: { zh: "标签", en: "Labels" },
+  updated: { zh: "最近更新", en: "Last updated" },
 };
 
-const issueColumnDescriptions: Record<InboxIssueColumn, string> = {
-  status: "Issue state chip on the left edge.",
-  id: "Ticket identifier like PAP-1009.",
-  assignee: "Assigned agent or board user.",
-  project: "Linked project pill with its color.",
-  workspace: "Execution or project workspace used for the issue.",
-  parent: "Parent issue identifier and title.",
-  labels: "Issue labels and tags.",
-  updated: "Latest visible activity time.",
+const issueColumnDescriptions: Record<InboxIssueColumn, Record<AppLanguage, string>> = {
+  status: { zh: "左侧显示任务状态。", en: "Shows task status on the left." },
+  id: { zh: "任务编号，例如 PAP-1009。", en: "Task identifier, for example PAP-1009." },
+  assignee: { zh: "分配的代理或董事会用户。", en: "Assigned agent or board user." },
+  project: { zh: "关联项目和项目颜色。", en: "Linked project and project color." },
+  workspace: { zh: "任务使用的执行工作区或项目工作区。", en: "Execution or project workspace used by the task." },
+  parent: { zh: "父任务编号和标题。", en: "Parent task identifier and title." },
+  labels: { zh: "任务标签。", en: "Task labels." },
+  updated: { zh: "最近可见动态时间。", en: "Most recent visible activity time." },
 };
 
 export function issueActivityText(issue: Issue): string {
-  return `Updated ${timeAgo(issue.lastActivityAt ?? issue.lastExternalCommentAt ?? issue.updatedAt)}`;
+  return `更新于 ${timeAgo(issue.lastActivityAt ?? issue.lastExternalCommentAt ?? issue.updatedAt)}`;
 }
 
 function issueTrailingGridTemplate(columns: InboxIssueColumn[]): string {
@@ -76,6 +77,7 @@ export function IssueColumnPicker({
   title: string;
   iconOnly?: boolean;
 }) {
+  const { language, t } = useLanguage();
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
@@ -84,17 +86,17 @@ export function IssueColumnPicker({
           variant={iconOnly ? "outline" : "ghost"}
           size={iconOnly ? "icon" : "sm"}
           className={iconOnly ? "h-8 w-8 shrink-0" : "hidden h-8 shrink-0 px-2 text-xs sm:inline-flex"}
-          title="Columns"
+          title={t("列", "Columns")}
         >
           <Columns3 className={iconOnly ? "h-3.5 w-3.5" : "mr-1 h-3.5 w-3.5"} />
-          {!iconOnly && "Columns"}
+          {!iconOnly && t("列", "Columns")}
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-[300px] rounded-xl border-border/70 p-1.5 shadow-xl shadow-black/10">
         <DropdownMenuLabel className="px-2 pb-1 pt-1.5">
           <div className="space-y-1">
             <div className="text-[10px] font-semibold uppercase tracking-[0.22em] text-muted-foreground">
-              Desktop issue rows
+              {t("桌面端任务行", "Desktop task rows")}
             </div>
             <div className="text-sm font-medium text-foreground">
               {title}
@@ -112,10 +114,10 @@ export function IssueColumnPicker({
           >
             <span className="flex flex-col gap-0.5">
               <span className="text-sm font-medium text-foreground">
-                {issueColumnLabels[column]}
+                {issueColumnLabels[column][language]}
               </span>
               <span className="text-xs leading-relaxed text-muted-foreground">
-                {issueColumnDescriptions[column]}
+                {issueColumnDescriptions[column][language]}
               </span>
             </span>
           </DropdownMenuCheckboxItem>
@@ -125,8 +127,8 @@ export function IssueColumnPicker({
           onSelect={onResetColumns}
           className="rounded-lg px-3 py-2 text-sm"
         >
-          Reset defaults
-          <span className="ml-auto text-xs text-muted-foreground">status, id, updated</span>
+          {t("恢复默认", "Restore defaults")}
+          <span className="ml-auto text-xs text-muted-foreground">{t("状态、ID、最近更新", "Status, ID, last updated")}</span>
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
@@ -148,6 +150,7 @@ export function InboxIssueMetaLeading({
   statusSlot?: ReactNode;
   checklistStepNumber?: number | string | null;
 }) {
+  const { t } = useLanguage();
   return (
     <>
       {showStatus ? (
@@ -187,7 +190,7 @@ export function InboxIssueMetaLeading({
               "text-blue-600 dark:text-blue-400",
             )}
           >
-            Live
+            {t("运行中", "Running")}
           </span>
         </span>
       )}
@@ -226,8 +229,9 @@ export function InboxIssueTrailingColumns({
   assigneeContent?: ReactNode;
   onFilterWorkspace?: (workspaceId: string) => void;
 }) {
+  const { t } = useLanguage();
   const activityText = timeAgo(issue.lastActivityAt ?? issue.lastExternalCommentAt ?? issue.updatedAt);
-  const userLabel = assigneeUserName ?? formatAssigneeUserLabel(issue.assigneeUserId, currentUserId) ?? "User";
+  const userLabel = assigneeUserName ?? formatAssigneeUserLabel(issue.assigneeUserId, currentUserId) ?? t("用户", "User");
 
   return (
     <span
@@ -267,7 +271,7 @@ export function InboxIssueTrailingColumns({
 
           return (
             <span key={column} className="min-w-0 truncate text-xs text-muted-foreground">
-              Unassigned
+              {t("未分配", "Unassigned")}
             </span>
           );
         }
@@ -292,7 +296,7 @@ export function InboxIssueTrailingColumns({
 
           return (
             <span key={column} className="min-w-0 truncate text-xs text-muted-foreground">
-              No project
+              {t("无项目", "No project")}
             </span>
           );
         }
@@ -349,7 +353,7 @@ export function InboxIssueTrailingColumns({
                     </button>
                   </TooltipTrigger>
                   <TooltipContent side="top" sideOffset={6}>
-                    Filter by workspace
+                    {t("按工作区筛选", "Filter by workspace")}
                   </TooltipContent>
                 </Tooltip>
               ) : (
@@ -369,7 +373,7 @@ export function InboxIssueTrailingColumns({
               {parentIdentifier ? (
                 <span className="font-mono">{parentIdentifier}</span>
               ) : (
-                <span className="italic">Sub-issue</span>
+                <span className="italic">{t("子任务", "Subtask")}</span>
               )}
             </span>
           );

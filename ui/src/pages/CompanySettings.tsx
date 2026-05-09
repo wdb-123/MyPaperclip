@@ -6,6 +6,7 @@ import {
 } from "@paperclipai/shared";
 import { useCompany } from "../context/CompanyContext";
 import { useBreadcrumbs } from "../context/BreadcrumbContext";
+import { useLanguage } from "../context/LanguageContext";
 import { companiesApi } from "../api/companies";
 import { accessApi } from "../api/access";
 import { assetsApi } from "../api/assets";
@@ -36,6 +37,7 @@ export function CompanySettings() {
     setSelectedCompanyId
   } = useCompany();
   const { setBreadcrumbs } = useBreadcrumbs();
+  const { t } = useLanguage();
   const queryClient = useQueryClient();
   // General settings local state
   const [companyName, setCompanyName] = useState("");
@@ -143,7 +145,7 @@ export function CompanySettings() {
     },
     onError: (err) => {
       setInviteError(
-        err instanceof Error ? err.message : "Failed to create invite"
+        err instanceof Error ? err.message : t("创建邀请失败", "Failed to create invite")
       );
     }
   });
@@ -214,15 +216,15 @@ export function CompanySettings() {
 
   useEffect(() => {
     setBreadcrumbs([
-      { label: selectedCompany?.name ?? "Company", href: "/dashboard" },
-      { label: "Settings" }
+      { label: selectedCompany?.name ?? t("公司", "Company"), href: "/dashboard" },
+      { label: t("设置", "Settings") }
     ]);
-  }, [setBreadcrumbs, selectedCompany?.name]);
+  }, [setBreadcrumbs, selectedCompany?.name, t]);
 
   if (!selectedCompany) {
     return (
       <div className="text-sm text-muted-foreground">
-        No company selected. Select a company from the switcher above.
+        {t("未选择公司。请从上方切换器选择一个公司。", "No company selected. Select a company from the switcher above.")}
       </div>
     );
   }
@@ -240,16 +242,16 @@ export function CompanySettings() {
     <div className="max-w-2xl space-y-6">
       <div className="flex items-center gap-2">
         <Settings className="h-5 w-5 text-muted-foreground" />
-        <h1 className="text-lg font-semibold">Company Settings</h1>
+        <h1 className="text-lg font-semibold">{t("公司设置", "Company Settings")}</h1>
       </div>
 
       {/* General */}
       <div className="space-y-4">
         <div className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
-          General
+          {t("常规", "General")}
         </div>
         <div className="space-y-3 rounded-md border border-border px-4 py-4">
-          <Field label="Company name" hint="The display name for your company.">
+          <Field label={t("公司名称", "Company name")} hint={t("公司在界面中的显示名称。", "The display name for your company.")}>
             <input
               className="w-full rounded-md border border-border bg-transparent px-2.5 py-1.5 text-sm outline-none"
               type="text"
@@ -258,14 +260,14 @@ export function CompanySettings() {
             />
           </Field>
           <Field
-            label="Description"
-            hint="Optional description shown in the company profile."
+            label={t("描述", "Description")}
+            hint={t("显示在公司资料中的可选描述。", "Optional description shown in the company profile.")}
           >
             <input
               className="w-full rounded-md border border-border bg-transparent px-2.5 py-1.5 text-sm outline-none"
               type="text"
               value={description}
-              placeholder="Optional company description"
+              placeholder={t("可选公司描述", "Optional company description")}
               onChange={(e) => setDescription(e.target.value)}
             />
           </Field>
@@ -275,7 +277,7 @@ export function CompanySettings() {
       {/* Appearance */}
       <div className="space-y-4">
         <div className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
-          Appearance
+          {t("外观", "Appearance")}
         </div>
         <div className="space-y-3 rounded-md border border-border px-4 py-4">
           <div className="flex items-start gap-4">
@@ -290,7 +292,7 @@ export function CompanySettings() {
             <div className="flex-1 space-y-3">
               <Field
                 label="Logo"
-                hint="Upload a PNG, JPEG, WEBP, GIF, or SVG logo image."
+                hint={t("上传 PNG、JPEG、WEBP、GIF 或 SVG 标志图片。", "Upload a PNG, JPEG, WEBP, GIF, or SVG logo image.")}
               >
                 <div className="space-y-2">
                   <input
@@ -307,7 +309,7 @@ export function CompanySettings() {
                         onClick={handleClearLogo}
                         disabled={clearLogoMutation.isPending}
                       >
-                        {clearLogoMutation.isPending ? "Removing..." : "Remove logo"}
+                        {clearLogoMutation.isPending ? t("正在移除...", "Removing...") : t("移除 Logo", "Remove logo")}
                       </Button>
                     </div>
                   )}
@@ -316,7 +318,7 @@ export function CompanySettings() {
                       {logoUploadError ??
                         (logoUploadMutation.error instanceof Error
                           ? logoUploadMutation.error.message
-                          : "Logo upload failed")}
+                          : t("Logo 上传失败", "Logo upload failed"))}
                     </span>
                   )}
                   {clearLogoMutation.isError && (
@@ -325,13 +327,13 @@ export function CompanySettings() {
                     </span>
                   )}
                   {logoUploadMutation.isPending && (
-                    <span className="text-xs text-muted-foreground">Uploading logo...</span>
+                    <span className="text-xs text-muted-foreground">{t("正在上传 Logo...", "Uploading logo...")}</span>
                   )}
                 </div>
               </Field>
               <Field
-                label="Brand color"
-                hint="Sets the hue for the company icon. Leave empty for auto-generated color."
+                label={t("品牌颜色", "Brand color")}
+                hint={t("设置公司图标的色相。留空则自动生成颜色。", "Sets the hue for the company icon. Leave empty for auto-generated color.")}
               >
                 <div className="flex items-center gap-2">
                   <input
@@ -349,7 +351,7 @@ export function CompanySettings() {
                         setBrandColor(v);
                       }
                     }}
-                    placeholder="Auto"
+                    placeholder={t("自动", "Auto")}
                     className="w-28 rounded-md border border-border bg-transparent px-2.5 py-1.5 text-sm font-mono outline-none"
                   />
                   {brandColor && (
@@ -359,14 +361,14 @@ export function CompanySettings() {
                       onClick={() => setBrandColor("")}
                       className="text-xs text-muted-foreground"
                     >
-                      Clear
+                      {t("清除", "Clear")}
                     </Button>
                   )}
                 </div>
               </Field>
               <Field
-                label="Attachment size limit"
-                hint={`Accepted range: 1-${MAX_COMPANY_ATTACHMENT_MAX_MIB} MiB.`}
+                label={t("附件大小上限", "Attachment size limit")}
+                hint={t(`可接受范围：1-${MAX_COMPANY_ATTACHMENT_MAX_MIB} MiB。`, `Accepted range: 1-${MAX_COMPANY_ATTACHMENT_MAX_MIB} MiB.`)}
               >
                 <div className="flex flex-col gap-1.5">
                   <div className="flex items-center gap-2">
@@ -383,7 +385,7 @@ export function CompanySettings() {
                   </div>
                   {!attachmentMaxValid && (
                     <span className="text-xs text-destructive">
-                      Enter a whole number from 1 to {MAX_COMPANY_ATTACHMENT_MAX_MIB}.
+                      {t(`请输入 1 到 ${MAX_COMPANY_ATTACHMENT_MAX_MIB} 之间的整数。`, `Enter a whole number from 1 to ${MAX_COMPANY_ATTACHMENT_MAX_MIB}.`)}
                     </span>
                   )}
                 </div>
@@ -401,16 +403,16 @@ export function CompanySettings() {
             onClick={handleSaveGeneral}
             disabled={generalMutation.isPending || !companyName.trim() || !attachmentMaxValid}
           >
-            {generalMutation.isPending ? "Saving..." : "Save changes"}
+            {generalMutation.isPending ? t("正在保存...", "Saving...") : t("保存更改", "Save changes")}
           </Button>
           {generalMutation.isSuccess && (
-            <span className="text-xs text-muted-foreground">Saved</span>
+            <span className="text-xs text-muted-foreground">{t("已保存", "Saved")}</span>
           )}
           {generalMutation.isError && (
             <span className="text-xs text-destructive">
               {generalMutation.error instanceof Error
                   ? generalMutation.error.message
-                  : "Failed to save"}
+                  : t("保存失败", "Failed to save")}
             </span>
           )}
         </div>
@@ -419,12 +421,12 @@ export function CompanySettings() {
       {/* Hiring */}
       <div className="space-y-4" data-testid="company-settings-team-section">
         <div className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
-          Hiring
+          {t("招募", "Hiring")}
         </div>
         <div className="rounded-md border border-border px-4 py-3">
           <ToggleField
-            label="Require board approval for new hires"
-            hint="New agent hires stay pending until approved by board."
+            label={t("新招募代理需要面板批准", "Require board approval for new hires")}
+            hint={t("新招募的代理会保持待审批状态，直到面板批准。", "New agent hires stay pending until approved by board.")}
             checked={!!selectedCompany.requireBoardApprovalForNewAgents}
             onChange={(v) => settingsMutation.mutate(v)}
             toggleTestId="company-settings-team-approval-toggle"
@@ -435,14 +437,14 @@ export function CompanySettings() {
       {/* Invites */}
       <div className="space-y-4" data-testid="company-settings-invites-section">
         <div className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
-          Invites
+          {t("邀请", "Invites")}
         </div>
         <div className="space-y-3 rounded-md border border-border px-4 py-4">
           <div className="flex items-center gap-1.5">
             <span className="text-xs text-muted-foreground">
-              Generate an OpenClaw agent invite snippet.
+              {t("生成 OpenClaw 代理邀请片段。", "Generate an OpenClaw agent invite snippet.")}
             </span>
-            <HintIcon text="Creates a short-lived OpenClaw agent invite and renders a copy-ready prompt." />
+            <HintIcon text={t("创建短期有效的 OpenClaw 代理邀请，并生成可复制的提示词。", "Creates a short-lived OpenClaw agent invite and renders a copy-ready prompt.")} />
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <Button
@@ -452,8 +454,8 @@ export function CompanySettings() {
               disabled={inviteMutation.isPending}
             >
               {inviteMutation.isPending
-                ? "Generating..."
-                : "Generate OpenClaw Invite Prompt"}
+                ? t("正在生成...", "Generating...")
+                : t("生成 OpenClaw 邀请提示词", "Generate OpenClaw Invite Prompt")}
             </Button>
           </div>
           {inviteError && (
@@ -466,7 +468,7 @@ export function CompanySettings() {
             >
               <div className="flex items-center justify-between gap-2">
                 <div className="text-xs text-muted-foreground">
-                  OpenClaw Invite Prompt
+                  {t("OpenClaw 邀请提示词", "OpenClaw Invite Prompt")}
                 </div>
                 {snippetCopied && (
                   <span
@@ -474,7 +476,7 @@ export function CompanySettings() {
                     className="flex items-center gap-1 text-xs text-green-600 animate-pulse"
                   >
                     <Check className="h-3 w-3" />
-                    Copied
+                    {t("已复制", "Copied")}
                   </span>
                 )}
               </div>
@@ -501,7 +503,7 @@ export function CompanySettings() {
                       }
                     }}
                   >
-                    {snippetCopied ? "Copied snippet" : "Copy snippet"}
+                    {snippetCopied ? t("已复制片段", "Copied snippet") : t("复制片段", "Copy snippet")}
                   </Button>
                 </div>
               </div>
@@ -513,24 +515,24 @@ export function CompanySettings() {
       {/* Import / Export */}
       <div className="space-y-4">
         <div className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
-          Company Packages
+          {t("公司包", "Company Packages")}
         </div>
         <div className="rounded-md border border-border px-4 py-4">
           <p className="text-sm text-muted-foreground">
-            Import and export have moved to dedicated pages accessible from the{" "}
-            <a href="/org" className="underline hover:text-foreground">Org Chart</a> header.
+            {t("导入和导出已移至专用页面，可从", "Import and export have moved to dedicated pages accessible from the")}{" "}
+            <a href="/org" className="underline hover:text-foreground">{t("组织图", "Org Chart")}</a>{t("顶部进入。", " header.")}
           </p>
           <div className="mt-3 flex items-center gap-2">
             <Button size="sm" variant="outline" asChild>
               <a href="/company/export">
                 <Download className="mr-1.5 h-3.5 w-3.5" />
-                Export
+                {t("导出", "Export")}
               </a>
             </Button>
             <Button size="sm" variant="outline" asChild>
               <a href="/company/import">
                 <Upload className="mr-1.5 h-3.5 w-3.5" />
-                Import
+                {t("导入", "Import")}
               </a>
             </Button>
           </div>
@@ -540,12 +542,11 @@ export function CompanySettings() {
       {/* Danger Zone */}
       <div className="space-y-4">
         <div className="text-xs font-medium text-destructive uppercase tracking-wide">
-          Danger Zone
+          {t("危险区域", "Danger Zone")}
         </div>
         <div className="space-y-3 rounded-md border border-destructive/40 bg-destructive/5 px-4 py-4">
           <p className="text-sm text-muted-foreground">
-            Archive this company to hide it from the sidebar. This persists in
-            the database.
+            {t("归档此公司会将其从侧栏隐藏。该状态会保存在数据库中。", "Archive this company to hide it from the sidebar. This persists in the database.")}
           </p>
           <div className="flex items-center gap-2">
             <Button
@@ -558,7 +559,7 @@ export function CompanySettings() {
               onClick={() => {
                 if (!selectedCompanyId) return;
                 const confirmed = window.confirm(
-                  `Archive company "${selectedCompany.name}"? It will be hidden from the sidebar.`
+                  t(`要归档公司“${selectedCompany.name}”吗？它将从侧栏隐藏。`, `Archive company "${selectedCompany.name}"? It will be hidden from the sidebar.`)
                 );
                 if (!confirmed) return;
                 const nextCompanyId =
@@ -574,16 +575,16 @@ export function CompanySettings() {
               }}
             >
               {archiveMutation.isPending
-                ? "Archiving..."
+                ? t("正在归档...", "Archiving...")
                 : selectedCompany.status === "archived"
-                ? "Already archived"
-                : "Archive company"}
+                ? t("已归档", "Already archived")
+                : t("归档公司", "Archive company")}
             </Button>
             {archiveMutation.isError && (
               <span className="text-xs text-destructive">
                 {archiveMutation.error instanceof Error
                   ? archiveMutation.error.message
-                  : "Failed to archive company"}
+                  : t("归档公司失败", "Failed to archive company")}
               </span>
             )}
           </div>

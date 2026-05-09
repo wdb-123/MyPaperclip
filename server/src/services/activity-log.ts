@@ -9,6 +9,7 @@ import { sanitizeRecord } from "../redaction.js";
 import { logger } from "../middleware/logger.js";
 import type { PluginEventBus } from "./plugin-event-bus.js";
 import { instanceSettingsService } from "./instance-settings.js";
+import { notifyActivityInBackground } from "./notifications.js";
 
 const PLUGIN_EVENT_SET: ReadonlySet<string> = new Set(PLUGIN_EVENT_TYPES);
 const ACTIVITY_ACTION_TO_PLUGIN_EVENT: Readonly<Record<string, PluginEventType>> = {
@@ -96,6 +97,8 @@ export async function logActivity(db: Db, input: LogActivityInput) {
       details: redactedDetails,
     },
   });
+
+  notifyActivityInBackground(db, input, redactedDetails);
 
   const pluginEventType = eventTypeForActivityAction(input.action);
   if (pluginEventType) {

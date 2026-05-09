@@ -43,6 +43,23 @@ if (!isSameFile && existsSync(CWD_ENV_PATH)) {
   loadDotenv({ path: CWD_ENV_PATH, override: false, quiet: true });
 }
 
+const MONOREPO_ROOT_ENV_PATH = resolve(process.cwd(), "..", ".env");
+const isRunningFromWorkspacePackage = existsSync(resolve(process.cwd(), "..", "pnpm-workspace.yaml"));
+const isSameAsPaperclipEnv = existsSync(MONOREPO_ROOT_ENV_PATH) && existsSync(PAPERCLIP_ENV_FILE_PATH)
+  ? realpathSync(MONOREPO_ROOT_ENV_PATH) === realpathSync(PAPERCLIP_ENV_FILE_PATH)
+  : MONOREPO_ROOT_ENV_PATH === PAPERCLIP_ENV_FILE_PATH;
+const isSameAsCwdEnv = existsSync(MONOREPO_ROOT_ENV_PATH) && existsSync(CWD_ENV_PATH)
+  ? realpathSync(MONOREPO_ROOT_ENV_PATH) === realpathSync(CWD_ENV_PATH)
+  : MONOREPO_ROOT_ENV_PATH === CWD_ENV_PATH;
+if (
+  isRunningFromWorkspacePackage &&
+  !isSameAsPaperclipEnv &&
+  !isSameAsCwdEnv &&
+  existsSync(MONOREPO_ROOT_ENV_PATH)
+) {
+  loadDotenv({ path: MONOREPO_ROOT_ENV_PATH, override: false, quiet: true });
+}
+
 maybeRepairLegacyWorktreeConfigAndEnvFiles();
 
 const TAILSCALE_DETECT_TIMEOUT_MS = 3000;

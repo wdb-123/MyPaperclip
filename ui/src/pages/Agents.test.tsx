@@ -7,6 +7,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { Agent } from "@paperclipai/shared";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Agents } from "./Agents";
+import { LanguageProvider } from "../context/LanguageContext";
 
 const mockAgentsApi = vi.hoisted(() => ({
   list: vi.fn(),
@@ -140,7 +141,9 @@ describe("Agents", () => {
     await act(async () => {
       root!.render(
         <QueryClientProvider client={queryClient}>
-          <Agents />
+          <LanguageProvider>
+            <Agents />
+          </LanguageProvider>
         </QueryClientProvider>,
       );
     });

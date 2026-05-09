@@ -3,6 +3,7 @@ import { Menu } from "lucide-react";
 import { useBreadcrumbs } from "../context/BreadcrumbContext";
 import { useSidebar } from "../context/SidebarContext";
 import { useCompany } from "../context/CompanyContext";
+import { useLanguage } from "../context/LanguageContext";
 import { Button } from "@/components/ui/button";
 import {
   Breadcrumb,
@@ -30,10 +31,27 @@ function GlobalToolbarPlugins({ context }: { context: GlobalToolbarContext }) {
   );
 }
 
+function LanguageToggleButton() {
+  const { language, toggleLanguage, t } = useLanguage();
+  return (
+    <Button
+      variant="ghost"
+      size="sm"
+      className="ml-2 h-8 shrink-0 px-2 text-xs"
+      onClick={toggleLanguage}
+      aria-label={language === "zh" ? t("切换到英文", "Switch to English") : t("切换到中文", "Switch to Chinese")}
+      title={language === "zh" ? t("切换到英文", "Switch to English") : t("切换到中文", "Switch to Chinese")}
+    >
+      {language === "zh" ? "中文" : "EN"}
+    </Button>
+  );
+}
+
 export function BreadcrumbBar() {
   const { breadcrumbs, mobileToolbar } = useBreadcrumbs();
   const { toggleSidebar, isMobile } = useSidebar();
   const { selectedCompanyId, selectedCompany } = useCompany();
+  const { t } = useLanguage();
 
   const globalToolbarSlotContext = useMemo(
     () => ({
@@ -57,6 +75,7 @@ export function BreadcrumbBar() {
     return (
       <div className="border-b border-border px-4 md:px-6 h-12 shrink-0 flex items-center justify-end">
         {globalToolbarSlots}
+        <LanguageToggleButton />
       </div>
     );
   }
@@ -67,7 +86,7 @@ export function BreadcrumbBar() {
       size="icon-sm"
       className="mr-2 shrink-0"
       onClick={toggleSidebar}
-      aria-label="Open sidebar"
+      aria-label={t("打开侧边栏", "Open sidebar")}
     >
       <Menu className="h-5 w-5" />
     </Button>
@@ -84,6 +103,7 @@ export function BreadcrumbBar() {
           </h1>
         </div>
         {globalToolbarSlots}
+        <LanguageToggleButton />
       </div>
     );
   }
@@ -116,6 +136,7 @@ export function BreadcrumbBar() {
         </Breadcrumb>
       </div>
       {globalToolbarSlots}
+      <LanguageToggleButton />
     </div>
   );
 }

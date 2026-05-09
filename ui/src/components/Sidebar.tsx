@@ -20,6 +20,7 @@ import { SidebarProjects } from "./SidebarProjects";
 import { SidebarAgents } from "./SidebarAgents";
 import { useDialogActions } from "../context/DialogContext";
 import { useCompany } from "../context/CompanyContext";
+import { useLanguage } from "../context/LanguageContext";
 import { heartbeatsApi } from "../api/heartbeats";
 import { instanceSettingsApi } from "../api/instanceSettings";
 import { queryKeys } from "../lib/queryKeys";
@@ -31,6 +32,7 @@ import { SidebarCompanyMenu } from "./SidebarCompanyMenu";
 export function Sidebar() {
   const { openNewIssue } = useDialogActions();
   const { selectedCompanyId, selectedCompany } = useCompany();
+  const { t } = useLanguage();
   const inboxBadge = useInboxBadge(selectedCompanyId);
   const { data: experimentalSettings } = useQuery({
     queryKey: queryKeys.instance.experimentalSettings,
@@ -77,12 +79,12 @@ export function Sidebar() {
             className="flex items-center gap-2.5 px-3 py-2 text-[13px] font-medium text-muted-foreground hover:bg-accent/50 hover:text-foreground transition-colors"
           >
             <SquarePen className="h-4 w-4 shrink-0" />
-            <span className="truncate">New Issue</span>
+            <span className="truncate">{t("新建任务", "New Task")}</span>
           </button>
-          <SidebarNavItem to="/dashboard" label="Dashboard" icon={LayoutDashboard} liveCount={liveRunCount} />
+          <SidebarNavItem to="/dashboard" label={t("仪表盘", "Dashboard")} icon={LayoutDashboard} liveCount={liveRunCount} />
           <SidebarNavItem
             to="/inbox"
-            label="Inbox"
+            label={t("收件箱", "Inbox")}
             icon={Inbox}
             badge={inboxBadge.inbox}
             badgeTone={inboxBadge.failedRuns > 0 ? "danger" : "default"}
@@ -97,13 +99,13 @@ export function Sidebar() {
           />
         </div>
 
-        <SidebarSection label="Work">
-          <SidebarNavItem to="/issues" label="Issues" icon={CircleDot} />
-          <SidebarNavItem to="/search" label="Search" icon={Search} />
-          <SidebarNavItem to="/routines" label="Routines" icon={Repeat} />
-          <SidebarNavItem to="/goals" label="Goals" icon={Target} />
+        <SidebarSection label={t("工作", "Work")}>
+          <SidebarNavItem to="/issues" label={t("任务", "Tasks")} icon={CircleDot} />
+          <SidebarNavItem to="/search" label={t("搜索", "Search")} icon={Search} />
+          <SidebarNavItem to="/routines" label={t("例行任务", "Routines")} icon={Repeat} />
+          <SidebarNavItem to="/goals" label={t("目标", "Goals")} icon={Target} />
           {showWorkspacesLink ? (
-            <SidebarNavItem to="/workspaces" label="Workspaces" icon={GitBranch} />
+            <SidebarNavItem to="/workspaces" label={t("工作区", "Workspaces")} icon={GitBranch} />
           ) : null}
         </SidebarSection>
 
@@ -111,12 +113,12 @@ export function Sidebar() {
 
         <SidebarAgents />
 
-        <SidebarSection label="Company">
-          <SidebarNavItem to="/org" label="Org" icon={Network} />
-          <SidebarNavItem to="/skills" label="Skills" icon={Boxes} />
-          <SidebarNavItem to="/costs" label="Costs" icon={DollarSign} />
-          <SidebarNavItem to="/activity" label="Activity" icon={History} />
-          <SidebarNavItem to="/company/settings" label="Settings" icon={Settings} />
+        <SidebarSection label={t("公司", "Company")}>
+          <SidebarNavItem to="/org" label={t("组织", "Org")} icon={Network} />
+          <SidebarNavItem to="/skills" label={t("技能", "Skills")} icon={Boxes} />
+          <SidebarNavItem to="/costs" label={t("成本", "Costs")} icon={DollarSign} />
+          <SidebarNavItem to="/activity" label={t("动态", "Activity")} icon={History} />
+          <SidebarNavItem to="/company/settings" label={t("设置", "Settings")} icon={Settings} />
         </SidebarSection>
 
         <PluginSlotOutlet

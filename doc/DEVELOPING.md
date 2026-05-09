@@ -484,6 +484,54 @@ pnpm secrets:migrate-inline-env         # dry run
 pnpm secrets:migrate-inline-env --apply # apply migration
 ```
 
+## Feishu Notifications
+
+Paperclip can send selected activity notifications to a Feishu custom bot webhook.
+This is useful for board-facing alerts such as approvals, budget incidents, and
+failed background actions. It also covers access/permission events and task
+status transitions that need operator visibility.
+
+Environment overrides:
+
+- `PAPERCLIP_NOTIFICATION_FEISHU_WEBHOOK_URL=<feishu-custom-bot-webhook>`
+- `PAPERCLIP_NOTIFICATION_FEISHU_SECRET=<optional-signed-bot-secret>`
+- `PAPERCLIP_NOTIFICATION_ACTIONS=<optional-comma-separated-actions-or-*>`
+
+Default notified actions:
+
+- `approval.created`
+- `approval.approved`
+- `approval.rejected`
+- `approval.revision_requested`
+- `approval.resubmitted`
+- `board_api_key.created`
+- `board_api_key.revoked`
+- `agent_api_key.claimed`
+- `invite.created`
+- `invite.openclaw_prompt_created`
+- `join.requested`
+- `join.request_replayed`
+- `join.approved`
+- `join.rejected`
+- `company_member.updated`
+- `company_member.access_updated`
+- `company_member.archived`
+- `company_member.permissions_updated`
+- `agent.permissions_updated`
+- `issue.updated` when status becomes `in_review` or `done`
+- `budget.soft_threshold_crossed`
+- `budget.hard_threshold_crossed`
+- `budget.incident_resolved`
+- any activity action ending in `.failed` or `_failed`
+
+Example:
+
+```sh
+PAPERCLIP_NOTIFICATION_FEISHU_WEBHOOK_URL=https://open.feishu.cn/open-apis/bot/v2/hook/xxx \
+PAPERCLIP_NOTIFICATION_FEISHU_SECRET=xxxx \
+pnpm dev
+```
+
 ## Company Deletion Toggle
 
 Company deletion is intended as a dev/debug capability and can be disabled at runtime:

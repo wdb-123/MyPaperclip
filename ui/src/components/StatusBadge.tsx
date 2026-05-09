@@ -1,7 +1,11 @@
 import { cn } from "../lib/utils";
 import { statusBadge, statusBadgeDefault } from "../lib/status-colors";
+import { useLanguage } from "../context/LanguageContext";
 
 export function StatusBadge({ status }: { status: string }) {
+  const { t } = useLanguage();
+  const translated = t(`status.${status}`);
+
   return (
     <span
       className={cn(
@@ -9,7 +13,7 @@ export function StatusBadge({ status }: { status: string }) {
         statusBadge[status] ?? statusBadgeDefault
       )}
     >
-      {status.replace(/_/g, " ")}
+      {translated === `status.${status}` ? status.replace(/_/g, " ") : translated}
     </span>
   );
 }

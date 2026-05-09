@@ -71,8 +71,8 @@ export function IssueRow({
         "inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-full border border-amber-500/40 bg-amber-500/10 text-amber-600 dark:text-amber-300",
         selected ? "border-muted-foreground text-muted-foreground" : null,
       )}
-      title={`Productivity review: ${productivityReviewTriggerLabel(productivityReview.trigger)}`}
-      aria-label="Productivity review open"
+      title={`效率复盘：${productivityReviewTriggerLabel(productivityReview.trigger)}`}
+      aria-label="效率复盘待处理"
     >
       <Eye className="h-2.5 w-2.5" aria-hidden />
     </span>
@@ -86,9 +86,9 @@ export function IssueRow({
   const planningModeIndicator = issue.workMode === "planning" ? (
     <span
       className="ml-1.5 inline-flex shrink-0 items-center rounded-full border border-amber-500/60 bg-amber-500/15 px-2 py-0.5 text-[10px] font-medium text-amber-700 dark:text-amber-300"
-      title="This issue is in planning mode."
+      title="此任务处于规划模式。"
     >
-      Planning
+      规划中
     </span>
   ) : null;
 
@@ -179,7 +179,7 @@ export function IssueRow({
                 "inline-flex h-4 w-4 items-center justify-center rounded-full transition-colors",
                 selected ? "hover:bg-muted/80" : "hover:bg-blue-500/20",
               )}
-              aria-label="Mark as read"
+              aria-label="标记为已读"
             >
               <span
                 className={cn(
@@ -205,7 +205,7 @@ export function IssueRow({
               }}
               disabled={archiveDisabled}
               className="inline-flex h-4 w-4 items-center justify-center rounded-md text-muted-foreground opacity-0 transition-opacity hover:text-foreground group-hover:opacity-100 disabled:pointer-events-none disabled:opacity-30"
-              aria-label="Dismiss from inbox"
+              aria-label="从收件箱移除"
             >
               <X className="h-3.5 w-3.5" />
             </button>

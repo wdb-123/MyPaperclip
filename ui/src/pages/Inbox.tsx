@@ -685,7 +685,7 @@ export function Inbox() {
   const issueLinkState = useMemo(
     () =>
       createIssueDetailLocationState(
-        "Inbox",
+        "收件箱",
         `${location.pathname}${location.search}${location.hash}`,
         "inbox",
       ),
@@ -723,7 +723,7 @@ export function Inbox() {
   });
 
   useEffect(() => {
-    setBreadcrumbs([{ label: "Inbox" }]);
+    setBreadcrumbs([{ label: "收件箱" }]);
   }, [setBreadcrumbs]);
 
   useEffect(() => {
@@ -865,7 +865,7 @@ export function Inbox() {
     if (currentUserId) {
       options.set(`user:${currentUserId}`, {
         id: `user:${currentUserId}`,
-        label: currentUserId === "local-board" ? "Board" : "Me",
+        label: currentUserId === "local-board" ? "董事会" : "我",
         kind: "user",
         searchText: currentUserId === "local-board" ? "board me human local-board" : `me board human ${currentUserId}`,
       });
@@ -1833,7 +1833,7 @@ export function Inbox() {
   }, [selectedIndex]);
 
   if (!selectedCompanyId) {
-    return <EmptyState icon={InboxIcon} message="Select a company to view inbox." />;
+    return <EmptyState icon={InboxIcon} message="请选择公司以查看收件箱。" />;
   }
 
   const hasRunFailures = failedRuns.length > 0;
@@ -1890,7 +1890,7 @@ export function Inbox() {
           <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
           <Input
             type="search"
-            placeholder="Search inbox…"
+            placeholder="搜索收件箱..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             onKeyDown={(e) => {
@@ -1920,14 +1920,14 @@ export function Inbox() {
             items={[
               {
                 value: "mine",
-                label: "Mine",
+                label: "我的",
               },
               {
                 value: "recent",
-                label: "Recent",
+                label: "最近",
               },
-              { value: "unread", label: "Unread" },
-              { value: "all", label: "All" },
+              { value: "unread", label: "未读" },
+              { value: "all", label: "全部" },
             ]}
           />
         </Tabs>
@@ -1937,7 +1937,7 @@ export function Inbox() {
             <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
             <Input
               type="search"
-              placeholder="Search inbox…"
+              placeholder="搜索收件箱..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               onKeyDown={(e) => {
@@ -1967,7 +1967,7 @@ export function Inbox() {
             size="icon"
             className={cn("hidden h-8 w-8 shrink-0 sm:inline-flex", nestingEnabled && "bg-accent")}
             onClick={toggleNesting}
-            title={nestingEnabled ? "Disable parent-child nesting" : "Enable parent-child nesting"}
+            title={nestingEnabled ? "关闭父子任务嵌套" : "开启父子任务嵌套"}
           >
             <ListTree className="h-3.5 w-3.5" />
           </Button>
@@ -1992,7 +1992,7 @@ export function Inbox() {
                 variant="outline"
                 size="icon"
                 className={cn("h-8 w-8 shrink-0", groupBy !== "none" && "bg-accent")}
-                title="Group"
+                title="分组"
               >
                 <Layers className="h-3.5 w-3.5" />
               </Button>
@@ -2000,11 +2000,11 @@ export function Inbox() {
             <PopoverContent align="end" className="w-40 p-2">
               <div className="space-y-0.5">
                 {([
-                  ["none", "None"],
-                  ["type", "Type"],
-                  ["assignee", "Assignee"],
-                  ["project", "Project"],
-                  ...(isolatedWorkspacesEnabled ? ([["workspace", "Workspace"]] as const) : []),
+                  ["none", "不分组"],
+                  ["type", "类型"],
+                  ["assignee", "负责人"],
+                  ["project", "项目"],
+                  ...(isolatedWorkspacesEnabled ? ([["workspace", "工作区"]] as const) : []),
                 ] as const).map(([value, label]) => (
                   <button
                     key={value}
@@ -2027,7 +2027,7 @@ export function Inbox() {
             visibleColumnSet={visibleIssueColumnSet}
             onToggleColumn={toggleIssueColumn}
             onResetColumns={() => setIssueColumns(DEFAULT_INBOX_ISSUE_COLUMNS)}
-            title="Choose which inbox columns stay visible"
+            title="选择收件箱中保持可见的列"
             iconOnly
           />
           {canMarkAllRead && (
@@ -2040,19 +2040,19 @@ export function Inbox() {
                 onClick={() => setShowMarkAllReadConfirm(true)}
                 disabled={markAllReadMutation.isPending}
               >
-                {markAllReadMutation.isPending ? "Marking…" : "Mark all as read"}
+                {markAllReadMutation.isPending ? "正在标记..." : "全部标为已读"}
               </Button>
               <Dialog open={showMarkAllReadConfirm} onOpenChange={setShowMarkAllReadConfirm}>
                 <DialogContent className="sm:max-w-md">
                   <DialogHeader>
-                    <DialogTitle>Mark all as read?</DialogTitle>
+                    <DialogTitle>全部标为已读？</DialogTitle>
                     <DialogDescription>
-                      This will mark {unreadIssueIds.length} unread {unreadIssueIds.length === 1 ? "item" : "items"} as read.
+                      将把 {unreadIssueIds.length} 个未读条目标为已读。
                     </DialogDescription>
                   </DialogHeader>
                   <DialogFooter>
                     <Button variant="outline" onClick={() => setShowMarkAllReadConfirm(false)}>
-                      Cancel
+                      取消
                     </Button>
                     <Button
                       onClick={() => {
@@ -2060,7 +2060,7 @@ export function Inbox() {
                         markAllReadMutation.mutate(unreadIssueIds);
                       }}
                     >
-                      Mark all as read
+                      全部标为已读
                     </Button>
                   </DialogFooter>
                 </DialogContent>
@@ -2078,15 +2078,15 @@ export function Inbox() {
             onValueChange={(value) => updateAllCategoryFilter(value as InboxCategoryFilter)}
           >
             <SelectTrigger className="h-8 w-[170px] text-xs">
-              <SelectValue placeholder="Category" />
+              <SelectValue placeholder="类别" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="everything">All categories</SelectItem>
-              <SelectItem value="issues_i_touched">My recent issues</SelectItem>
-              <SelectItem value="join_requests">Join requests</SelectItem>
-              <SelectItem value="approvals">Approvals</SelectItem>
-              <SelectItem value="failed_runs">Failed runs</SelectItem>
-              <SelectItem value="alerts">Alerts</SelectItem>
+              <SelectItem value="everything">全部类别</SelectItem>
+              <SelectItem value="issues_i_touched">我最近参与的任务</SelectItem>
+              <SelectItem value="join_requests">加入请求</SelectItem>
+              <SelectItem value="approvals">审批</SelectItem>
+              <SelectItem value="failed_runs">失败运行</SelectItem>
+              <SelectItem value="alerts">提醒</SelectItem>
             </SelectContent>
           </Select>
 
@@ -2096,12 +2096,12 @@ export function Inbox() {
               onValueChange={(value) => updateAllApprovalFilter(value as InboxApprovalFilter)}
             >
               <SelectTrigger className="h-8 w-[170px] text-xs">
-                <SelectValue placeholder="Approval status" />
+                <SelectValue placeholder="审批状态" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">All approval statuses</SelectItem>
-                <SelectItem value="actionable">Needs action</SelectItem>
-                <SelectItem value="resolved">Resolved</SelectItem>
+                <SelectItem value="all">全部审批状态</SelectItem>
+                <SelectItem value="actionable">需要处理</SelectItem>
+                <SelectItem value="resolved">已解决</SelectItem>
               </SelectContent>
             </Select>
           )}
@@ -2120,14 +2120,14 @@ export function Inbox() {
           icon={searchQuery.trim() ? Search : InboxIcon}
           message={
             searchQuery.trim()
-              ? "No inbox items match your search."
+              ? "没有收件箱条目匹配你的搜索。"
               : tab === "mine"
-              ? "Inbox zero."
+              ? "收件箱已清空。"
               : tab === "unread"
-              ? "No new inbox items."
+              ? "没有新的收件箱条目。"
               : tab === "recent"
-                ? "No recent inbox items."
-                : "No inbox items match these filters."
+                ? "没有最近的收件箱条目。"
+                : "没有收件箱条目匹配这些筛选条件。"
           }
         />
       )}
