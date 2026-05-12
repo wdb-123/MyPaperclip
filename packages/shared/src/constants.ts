@@ -553,6 +553,15 @@ export const HUMAN_COMPANY_MEMBERSHIP_ROLE_LABELS: Record<HumanCompanyMembership
   viewer: "Viewer",
 };
 
+export const ORGANIZATION_STATUSES = ["active", "archived"] as const;
+export type OrganizationStatus = (typeof ORGANIZATION_STATUSES)[number];
+
+export const POSITION_ASSIGNMENT_PRINCIPAL_TYPES = ["user", "agent"] as const;
+export type PositionAssignmentPrincipalType = (typeof POSITION_ASSIGNMENT_PRINCIPAL_TYPES)[number];
+
+export const POSITION_ASSIGNMENT_STATUSES = ["active", "ended"] as const;
+export type PositionAssignmentStatus = (typeof POSITION_ASSIGNMENT_STATUSES)[number];
+
 export const INSTANCE_USER_ROLES = ["instance_admin"] as const;
 export type InstanceUserRole = (typeof INSTANCE_USER_ROLES)[number];
 

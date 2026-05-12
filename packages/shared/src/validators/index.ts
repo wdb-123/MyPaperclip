@@ -27,6 +27,20 @@ export {
   type UpdateCompanyBranding,
 } from "./company.js";
 export {
+  createDepartmentSchema,
+  updateDepartmentSchema,
+  createPositionSchema,
+  updatePositionSchema,
+  createPositionAssignmentSchema,
+  updatePositionAssignmentSchema,
+  type CreateDepartment,
+  type UpdateDepartment,
+  type CreatePosition,
+  type UpdatePosition,
+  type CreatePositionAssignment,
+  type UpdatePositionAssignment,
+} from "./organization.js";
+export {
   environmentDriverSchema,
   environmentStatusSchema,
   environmentLeaseStatusSchema,

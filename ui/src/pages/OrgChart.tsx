@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, useMemo, useCallback } from "react";
 import { Link, useNavigate } from "@/lib/router";
 import { useQuery } from "@tanstack/react-query";
 import { agentsApi, type OrgNode } from "../api/agents";
+import { organizationApi } from "../api/organization";
 import { useCompany } from "../context/CompanyContext";
 import { useBreadcrumbs } from "../context/BreadcrumbContext";
 import { useLanguage } from "../context/LanguageContext";
@@ -11,7 +12,7 @@ import { Button } from "@/components/ui/button";
 import { EmptyState } from "../components/EmptyState";
 import { PageSkeleton } from "../components/PageSkeleton";
 import { AgentIcon } from "../components/AgentIconPicker";
-import { Download, Maximize2, Minus, Network, Plus, Upload } from "lucide-react";
+import { Download, Maximize2, Minus, Network, Plus, Upload, UsersRound } from "lucide-react";
 import { AGENT_ROLE_LABELS, type Agent } from "@paperclipai/shared";
 
 // Layout constants
@@ -186,6 +187,24 @@ export function OrgChart() {
   const { data: agents } = useQuery({
     queryKey: queryKeys.agents.list(selectedCompanyId!),
     queryFn: () => agentsApi.list(selectedCompanyId!),
+    enabled: !!selectedCompanyId,
+  });
+
+  const { data: departments } = useQuery({
+    queryKey: queryKeys.organization.departments(selectedCompanyId!),
+    queryFn: () => organizationApi.listDepartments(selectedCompanyId!),
+    enabled: !!selectedCompanyId,
+  });
+
+  const { data: positions } = useQuery({
+    queryKey: queryKeys.organization.positions(selectedCompanyId!),
+    queryFn: () => organizationApi.listPositions(selectedCompanyId!),
+    enabled: !!selectedCompanyId,
+  });
+
+  const { data: positionAssignments } = useQuery({
+    queryKey: queryKeys.organization.positionAssignments(selectedCompanyId!),
+    queryFn: () => organizationApi.listPositionAssignments(selectedCompanyId!),
     enabled: !!selectedCompanyId,
   });
 
@@ -445,6 +464,18 @@ export function OrgChart() {
   return (
     <div className="flex h-[calc(100dvh-9rem)] min-h-[420px] flex-col md:h-full md:min-h-0">
       <div className="mb-2 flex shrink-0 flex-wrap items-center justify-start gap-2">
+        <div className="mr-auto flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+          <div className="flex items-center gap-1.5 rounded-md border border-border bg-card px-2.5 py-1.5">
+            <UsersRound className="h-3.5 w-3.5" />
+            <span>{t("部门", "Departments")}: {departments?.length ?? 0}</span>
+          </div>
+          <div className="rounded-md border border-border bg-card px-2.5 py-1.5">
+            {t("岗位", "Positions")}: {positions?.length ?? 0}
+          </div>
+          <div className="rounded-md border border-border bg-card px-2.5 py-1.5">
+            {t("任职", "Assignments")}: {positionAssignments?.length ?? 0}
+          </div>
+        </div>
         <Link to="/company/import">
           <Button variant="outline" size="sm">
             <Upload className="mr-1.5 h-3.5 w-3.5" />
