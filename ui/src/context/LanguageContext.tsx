@@ -1,4 +1,6 @@
 import { createContext, useContext, useEffect, useMemo, useState } from "react";
+import i18next from "i18next";
+import { I18nextProvider, initReactI18next } from "react-i18next";
 
 export type AppLanguage = "en" | "zh";
 
@@ -1432,6 +1434,21 @@ const translations: Record<AppLanguage, Record<string, string>> = {
   },
 };
 
+void i18next.use(initReactI18next).init({
+  resources: {
+    en: { translation: translations.en },
+    zh: { translation: translations.zh },
+  },
+  lng: detectInitialLanguage(),
+  fallbackLng: "en",
+  interpolation: {
+    escapeValue: false,
+    prefix: "__paperclip_i18n_unused_prefix__",
+    suffix: "__paperclip_i18n_unused_suffix__",
+  },
+  returnNull: false,
+});
+
 const LanguageContext = createContext<LanguageContextValue | null>(null);
 
 function detectInitialLanguage(): AppLanguage {
@@ -1446,16 +1463,22 @@ function detectInitialLanguage(): AppLanguage {
 }
 
 export function translateText(language: AppLanguage, key: string, values?: TranslationValues): string {
-  const template = translations[language][key] ?? translations.en[key] ?? key;
-  if (!values) return template;
-  return template.replace(/\{(\w+)\}/g, (match, name) => {
-    const value = values[name];
-    return value === undefined ? match : String(value);
+  const template = i18next.t(key, {
+    lng: language,
+    defaultValue: translations.en[key] ?? key,
   });
+  return interpolateTemplate(template, values);
 }
 
 export function translateInline(language: AppLanguage, zh: string, en: string, values?: TranslationValues): string {
-  const template = language === "zh" ? zh : en;
+  const template = i18next.t(zh, {
+    lng: language,
+    defaultValue: language === "zh" ? zh : en,
+  });
+  return interpolateTemplate(template, values);
+}
+
+function interpolateTemplate(template: string, values?: TranslationValues): string {
   if (!values) return template;
   return template.replace(/\{(\w+)\}/g, (match, name) => {
     const value = values[name];
@@ -1476,6 +1499,7 @@ export function LanguageProvider({ children }: { children: React.ReactNode }) {
     } catch {
       // Ignore storage access failures.
     }
+    void i18next.changeLanguage(language);
   }, [language]);
 
   const value = useMemo<LanguageContextValue>(() => ({
@@ -1489,7 +1513,11 @@ export function LanguageProvider({ children }: { children: React.ReactNode }) {
     ),
   }), [language]);
 
-  return <LanguageContext.Provider value={value}>{children}</LanguageContext.Provider>;
+  return (
+    <I18nextProvider i18n={i18next}>
+      <LanguageContext.Provider value={value}>{children}</LanguageContext.Provider>
+    </I18nextProvider>
+  );
 }
 
 export function useLanguage() {

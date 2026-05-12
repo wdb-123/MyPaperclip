@@ -5,6 +5,7 @@ import type { AgentAdapterType, JoinRequest } from "@paperclipai/shared";
 import { Button } from "@/components/ui/button";
 import { CompanyPatternIcon } from "@/components/CompanyPatternIcon";
 import { useCompany } from "@/context/CompanyContext";
+import { useLanguage } from "@/context/LanguageContext";
 import { Link, useNavigate, useParams } from "@/lib/router";
 import { accessApi } from "../api/access";
 import { authApi } from "../api/auth";
@@ -17,6 +18,7 @@ import { formatDate } from "../lib/utils";
 
 type AuthMode = "sign_in" | "sign_up";
 type AuthFeedback = { tone: "error" | "info"; message: string };
+type Translate = ReturnType<typeof useLanguage>["t"];
 
 const joinAdapterOptions: AgentAdapterType[] = [...AGENT_ADAPTER_TYPES];
 const ENABLED_INVITE_ADAPTERS = new Set([
@@ -43,9 +45,15 @@ const panelClassName = "border border-zinc-800 bg-zinc-950/95 p-6";
 const modeButtonBaseClassName =
   "flex-1 border px-3 py-2 text-sm transition-colors";
 
-function formatHumanRole(role: string | null | undefined) {
+function formatHumanRole(role: string | null | undefined, t: Translate) {
   if (!role) return null;
-  return role.charAt(0).toUpperCase() + role.slice(1);
+  const labels: Record<string, string> = {
+    viewer: t("查看者", "Viewer"),
+    operator: t("操作员", "Operator"),
+    admin: t("管理员", "Admin"),
+    owner: t("所有者", "Owner"),
+  };
+  return labels[role] ?? role.charAt(0).toUpperCase() + role.slice(1);
 }
 
 function getAuthErrorCode(error: unknown) {
@@ -64,44 +72,57 @@ function mapInviteAuthFeedback(
   error: unknown,
   authMode: AuthMode,
   email: string,
+  t: Translate,
 ): AuthFeedback {
   const code = getAuthErrorCode(error);
   const message = getAuthErrorMessage(error);
-  const emailLabel = email.trim().length > 0 ? email.trim() : "that email";
+  const emailLabel = email.trim().length > 0 ? email.trim() : t("该邮箱", "that email");
 
   if (code === "USER_ALREADY_EXISTS_USE_ANOTHER_EMAIL") {
     return {
       tone: "info",
-      message: `An account already exists for ${emailLabel}. Sign in below to continue with this invite.`,
+      message: t(
+        "{email} 已有账户。请在下方登录以继续接受此邀请。",
+        "An account already exists for {email}. Sign in below to continue with this invite.",
+        { email: emailLabel },
+      ),
     };
   }
 
   if (code === "INVALID_EMAIL_OR_PASSWORD") {
     return {
       tone: "error",
-      message:
+      message: t(
+        "邮箱和密码与现有 Paperclip 账户不匹配。请检查这两项；如果你是新用户，请先创建账户。",
         "That email and password did not match an existing Paperclip account. Check both fields, or create an account first if you are new here.",
+      ),
     };
   }
 
   if (authMode === "sign_in" && message === "Request failed: 401") {
     return {
       tone: "error",
-      message:
+      message: t(
+        "邮箱和密码与现有 Paperclip 账户不匹配。请检查这两项；如果你是新用户，请先创建账户。",
         "That email and password did not match an existing Paperclip account. Check both fields, or create an account first if you are new here.",
+      ),
     };
   }
 
   if (authMode === "sign_up" && message === "Request failed: 422") {
     return {
       tone: "info",
-      message: `An account may already exist for ${emailLabel}. Try signing in instead.`,
+      message: t(
+        "{email} 可能已经有账户。请尝试改为登录。",
+        "An account may already exist for {email}. Try signing in instead.",
+        { email: emailLabel },
+      ),
     };
   }
 
   return {
     tone: "error",
-    message: message ?? "Authentication failed",
+    message: message ?? t("认证失败", "Authentication failed"),
   };
 }
 
@@ -160,8 +181,9 @@ function AwaitingJoinApprovalPanel({
   claimApiKeyPath = null,
   onboardingTextUrl = null,
 }: AwaitingJoinApprovalPanelProps) {
+  const { t } = useLanguage();
   const approvalUrl = `${window.location.origin}/company/settings/access`;
-  const approverLabel = invitedByUserName ?? "A company admin";
+  const approverLabel = invitedByUserName ?? t("公司管理员", "A company admin");
 
   return (
     <div className="min-h-screen bg-zinc-950 px-6 py-12 text-zinc-100">
@@ -173,38 +195,38 @@ function AwaitingJoinApprovalPanel({
             companyBrandColor={companyBrandColor}
             className="h-12 w-12 border border-zinc-800 rounded-none"
           />
-          <h1 className="text-lg font-semibold">Request to join {companyDisplayName}</h1>
+          <h1 className="text-lg font-semibold">{t("申请加入 {company}", "Request to join {company}", { company: companyDisplayName })}</h1>
         </div>
         <div className="mt-4 space-y-3">
           <p className="text-sm text-zinc-400">
-            Your request is still awaiting approval. {approverLabel} must approve your request to join.
+            {t("你的申请仍在等待审批。需要 {approver} 批准后才能加入。", "Your request is still awaiting approval. {approver} must approve your request to join.", { approver: approverLabel })}
           </p>
           <div className="border border-zinc-800 p-3">
-            <p className="text-xs text-zinc-500 mb-1">Approval page</p>
+            <p className="text-xs text-zinc-500 mb-1">{t("审批页面", "Approval page")}</p>
             <a
               href={approvalUrl}
               className="text-sm text-zinc-200 underline underline-offset-2 hover:text-zinc-100"
             >
-              Company Settings → Access
+              {t("公司设置 → 访问", "Company Settings -> Access")}
             </a>
           </div>
           <p className="text-sm text-zinc-400">
-            Ask them to visit <a href={approvalUrl} className="text-zinc-200 underline underline-offset-2 hover:text-zinc-100">Company Settings → Access</a> to approve your request.
+            {t("请让对方前往", "Ask them to visit")} <a href={approvalUrl} className="text-zinc-200 underline underline-offset-2 hover:text-zinc-100">{t("公司设置 → 访问", "Company Settings -> Access")}</a> {t("批准你的申请。", "to approve your request.")}
           </p>
           <p className="text-xs text-zinc-500">
-            Refresh this page after you've been approved — you'll be redirected automatically.
+            {t("获批后刷新此页面，系统会自动跳转。", "Refresh this page after you've been approved and you'll be redirected automatically.")}
           </p>
         </div>
         {claimSecret && claimApiKeyPath ? (
           <div className="mt-4 space-y-1 border border-zinc-800 p-3 text-xs text-zinc-400">
-            <div className="text-zinc-200">Claim secret</div>
+            <div className="text-zinc-200">{t("领取密钥", "Claim secret")}</div>
             <div className="font-mono break-all">{claimSecret}</div>
             <div className="font-mono break-all">POST {claimApiKeyPath}</div>
           </div>
         ) : null}
         {onboardingTextUrl ? (
           <div className="mt-4 text-xs text-zinc-400">
-            Onboarding: <span className="font-mono break-all">{onboardingTextUrl}</span>
+            {t("入门说明：", "Onboarding: ")}<span className="font-mono break-all">{onboardingTextUrl}</span>
           </div>
         ) : null}
       </div>
@@ -213,6 +235,7 @@ function AwaitingJoinApprovalPanel({
 }
 
 export function InviteLandingPage() {
+  const { t } = useLanguage();
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const { setSelectedCompanyId } = useCompany();
@@ -284,12 +307,12 @@ export function InviteLandingPage() {
       companiesQuery.data?.some((company) => company.id === invite?.companyId),
     );
   const companyName = invite?.companyName?.trim() || null;
-  const companyDisplayName = companyName || "this Paperclip company";
+  const companyDisplayName = companyName || t("这个 Paperclip 公司", "this Paperclip company");
   const companyLogoUrl = invite?.companyLogoUrl?.trim() || null;
   const companyBrandColor = invite?.companyBrandColor?.trim() || null;
   const invitedByUserName = invite?.invitedByUserName?.trim() || null;
   const inviteMessage = invite?.inviteMessage?.trim() || null;
-  const requestedHumanRole = formatHumanRole(invite?.humanRole);
+  const requestedHumanRole = formatHumanRole(invite?.humanRole, t);
   const inviteJoinRequestStatus = invite?.joinRequestStatus ?? null;
   const inviteJoinRequestType = invite?.joinRequestType ?? null;
   const requiresHumanAccount =
@@ -309,7 +332,7 @@ export function InviteLandingPage() {
   const sessionLabel =
     sessionQuery.data?.user.name?.trim() ||
     sessionQuery.data?.user.email?.trim() ||
-    "this account";
+    t("此账户", "this account");
 
   const authCanSubmit =
     email.trim().length > 0 &&
@@ -318,12 +341,12 @@ export function InviteLandingPage() {
 
   const acceptMutation = useMutation({
     mutationFn: async () => {
-      if (!invite) throw new Error("Invite not found");
+      if (!invite) throw new Error(t("找不到邀请", "Invite not found"));
       if (isCheckingExistingMembership) {
-        throw new Error("Checking your company access. Try again in a moment.");
+        throw new Error(t("正在检查你的公司访问权限。请稍后再试。", "Checking your company access. Try again in a moment."));
       }
       if (isCurrentMember) {
-        throw new Error("This account already belongs to the company.");
+        throw new Error(t("此账户已经属于该公司。", "This account already belongs to the company."));
       }
       if (invite.inviteType === "bootstrap_ceo" || invite.allowedJoinTypes !== "agent") {
         return accessApi.acceptInvite(token, { requestType: "human" });
@@ -348,7 +371,7 @@ export function InviteLandingPage() {
       }
     },
     onError: (err) => {
-      setError(err instanceof Error ? err.message : "Failed to accept invite");
+      setError(err instanceof Error ? err.message : t("接受邀请失败", "Failed to accept invite"));
     },
   });
 
@@ -402,7 +425,7 @@ export function InviteLandingPage() {
       }
     },
     onError: (err) => {
-      const nextFeedback = mapInviteAuthFeedback(err, authMode, email);
+      const nextFeedback = mapInviteAuthFeedback(err, authMode, email, t);
       if (getAuthErrorCode(err) === "USER_ALREADY_EXISTS_USE_ANOTHER_EMAIL") {
         setAuthMode("sign_in");
         setPassword("");
@@ -412,31 +435,31 @@ export function InviteLandingPage() {
   });
 
   const joinButtonLabel = useMemo(() => {
-    if (!invite) return "Continue";
-    if (invite.inviteType === "bootstrap_ceo") return "Accept invite";
-    if (showsAgentForm) return "Submit request";
-    return sessionQuery.data ? "Accept invite" : "Continue";
-  }, [invite, sessionQuery.data, showsAgentForm]);
+    if (!invite) return t("继续", "Continue");
+    if (invite.inviteType === "bootstrap_ceo") return t("接受邀请", "Accept invite");
+    if (showsAgentForm) return t("提交申请", "Submit request");
+    return sessionQuery.data ? t("接受邀请", "Accept invite") : t("继续", "Continue");
+  }, [invite, sessionQuery.data, showsAgentForm, t]);
 
   if (!token) {
-    return <div className="mx-auto max-w-xl py-10 text-sm text-destructive">Invalid invite token.</div>;
+    return <div className="mx-auto max-w-xl py-10 text-sm text-destructive">{t("邀请令牌无效。", "Invalid invite token.")}</div>;
   }
 
   if (inviteQuery.isLoading || healthQuery.isLoading || sessionQuery.isLoading) {
-    return <div className="mx-auto max-w-xl py-10 text-sm text-muted-foreground">Loading invite...</div>;
+    return <div className="mx-auto max-w-xl py-10 text-sm text-muted-foreground">{t("正在加载邀请...", "Loading invite...")}</div>;
   }
 
   if (isCheckingExistingMembership) {
-    return <div className="mx-auto max-w-xl py-10 text-sm text-muted-foreground">Checking your access...</div>;
+    return <div className="mx-auto max-w-xl py-10 text-sm text-muted-foreground">{t("正在检查你的访问权限...", "Checking your access...")}</div>;
   }
 
   if (inviteQuery.error || !invite) {
     return (
       <div className="mx-auto max-w-xl py-10">
         <div className="border border-border bg-card p-6" data-testid="invite-error">
-          <h1 className="text-lg font-semibold">Invite not available</h1>
+          <h1 className="text-lg font-semibold">{t("邀请不可用", "Invite not available")}</h1>
           <p className="mt-2 text-sm text-muted-foreground">
-            This invite may be expired, revoked, or already used.
+            {t("此邀请可能已过期、已撤销或已被使用。", "This invite may be expired, revoked, or already used.")}
           </p>
         </div>
       </div>
@@ -448,7 +471,7 @@ export function InviteLandingPage() {
     inviteJoinRequestType === "human" &&
     isCurrentMember
   ) {
-    return <div className="mx-auto max-w-xl py-10 text-sm text-muted-foreground">Opening company...</div>;
+    return <div className="mx-auto max-w-xl py-10 text-sm text-muted-foreground">{t("正在打开公司...", "Opening company...")}</div>;
   }
 
   if (inviteJoinRequestStatus === "pending_approval") {
@@ -466,11 +489,11 @@ export function InviteLandingPage() {
     return (
       <div className="mx-auto max-w-xl py-10">
         <div className="border border-border bg-card p-6" data-testid="invite-error">
-          <h1 className="text-lg font-semibold">Invite not available</h1>
+          <h1 className="text-lg font-semibold">{t("邀请不可用", "Invite not available")}</h1>
           <p className="mt-2 text-sm text-muted-foreground">
             {inviteJoinRequestStatus === "rejected"
-              ? "This join request was not approved."
-              : "This invite has already been used."}
+              ? t("此加入申请未获批准。", "This join request was not approved.")
+              : t("此邀请已经被使用。", "This invite has already been used.")}
           </p>
         </div>
       </div>
@@ -481,10 +504,10 @@ export function InviteLandingPage() {
     return (
       <div className="min-h-screen bg-zinc-950 px-6 py-12 text-zinc-100">
         <div className="mx-auto max-w-md border border-zinc-800 bg-zinc-950 p-6">
-          <h1 className="text-lg font-semibold">Bootstrap complete</h1>
+          <h1 className="text-lg font-semibold">{t("初始化完成", "Bootstrap complete")}</h1>
           <div className="mt-4">
             <Button asChild className="rounded-none">
-              <Link to="/">Open board</Link>
+              <Link to="/">{t("打开面板", "Open board")}</Link>
             </Button>
           </div>
         </div>
@@ -514,11 +537,11 @@ export function InviteLandingPage() {
                 companyBrandColor={companyBrandColor}
                 className="h-12 w-12 border border-zinc-800 rounded-none"
               />
-              <h1 className="text-lg font-semibold">You joined the company</h1>
+              <h1 className="text-lg font-semibold">{t("你已加入公司", "You joined the company")}</h1>
             </div>
             <div className="mt-4">
               <Button asChild className="w-full rounded-none">
-                <Link to="/">Open board</Link>
+                <Link to="/">{t("打开面板", "Open board")}</Link>
               </Button>
             </div>
           </div>
@@ -551,52 +574,54 @@ export function InviteLandingPage() {
               />
               <div className="min-w-0">
                 <p className="text-xs uppercase tracking-[0.24em] text-zinc-500">
-                  You&apos;ve been invited to join Paperclip
+                  {t("你已受邀加入 Paperclip", "You've been invited to join Paperclip")}
                 </p>
                 <h1 className="mt-2 text-2xl font-semibold">
-                  {invite.inviteType === "bootstrap_ceo" ? "Set up Paperclip" : `Join ${companyDisplayName}`}
+                  {invite.inviteType === "bootstrap_ceo"
+                    ? t("设置 Paperclip", "Set up Paperclip")
+                    : t("加入 {company}", "Join {company}", { company: companyDisplayName })}
                 </h1>
                 <p className="mt-2 max-w-2xl text-sm leading-6 text-zinc-300">
                   {showsAgentForm
-                    ? "Review the invite details, then submit the agent information below to start the join request."
+                    ? t("请查看邀请详情，然后在下方提交代理信息以发起加入申请。", "Review the invite details, then submit the agent information below to start the join request.")
                     : requiresHumanAccount
-                      ? "Create your Paperclip account first. If you already have one, switch to sign in and continue the invite with the same email."
-                      : "Your account is ready. Review the invite details, then accept it to continue."}
+                      ? t("请先创建 Paperclip 账户。如果你已经有账户，请切换到登录，并使用同一邮箱继续接受邀请。", "Create your Paperclip account first. If you already have one, switch to sign in and continue the invite with the same email.")
+                      : t("你的账户已就绪。请查看邀请详情，然后接受邀请以继续。", "Your account is ready. Review the invite details, then accept it to continue.")}
                 </p>
               </div>
             </div>
 
             <div className="grid gap-3 sm:grid-cols-2">
               <div className="border border-zinc-800 p-3">
-                <div className="text-xs uppercase tracking-[0.2em] text-zinc-500">Company</div>
+                <div className="text-xs uppercase tracking-[0.2em] text-zinc-500">{t("公司", "Company")}</div>
                 <div className="mt-1 text-sm text-zinc-100">{companyDisplayName}</div>
               </div>
               <div className="border border-zinc-800 p-3">
-                <div className="text-xs uppercase tracking-[0.2em] text-zinc-500">Invited by</div>
-                <div className="mt-1 text-sm text-zinc-100">{invitedByUserName ?? "Paperclip board"}</div>
+                <div className="text-xs uppercase tracking-[0.2em] text-zinc-500">{t("邀请人", "Invited by")}</div>
+                <div className="mt-1 text-sm text-zinc-100">{invitedByUserName ?? t("Paperclip 面板", "Paperclip board")}</div>
               </div>
               <div className="border border-zinc-800 p-3">
-                <div className="text-xs uppercase tracking-[0.2em] text-zinc-500">Requested access</div>
+                <div className="text-xs uppercase tracking-[0.2em] text-zinc-500">{t("申请访问权限", "Requested access")}</div>
                 <div className="mt-1 text-sm text-zinc-100">
-                  {showsAgentForm ? "Agent join request" : requestedHumanRole ?? "Company access"}
+                  {showsAgentForm ? t("代理加入申请", "Agent join request") : requestedHumanRole ?? t("公司访问权限", "Company access")}
                 </div>
               </div>
               <div className="border border-zinc-800 p-3">
-                <div className="text-xs uppercase tracking-[0.2em] text-zinc-500">Invite expires</div>
+                <div className="text-xs uppercase tracking-[0.2em] text-zinc-500">{t("邀请过期时间", "Invite expires")}</div>
                 <div className="mt-1 text-sm text-zinc-100">{formatDate(invite.expiresAt)}</div>
               </div>
             </div>
 
             {inviteMessage ? (
               <div className="border border-amber-500/40 bg-amber-500/10 p-4">
-                <div className="text-xs uppercase tracking-[0.2em] text-amber-200/80">Message from inviter</div>
+                <div className="text-xs uppercase tracking-[0.2em] text-amber-200/80">{t("邀请人留言", "Message from inviter")}</div>
                 <p className="mt-2 text-sm leading-6 text-amber-50">{inviteMessage}</p>
               </div>
             ) : null}
 
             {sessionQuery.data ? (
               <div className="border border-emerald-500/40 bg-emerald-500/10 p-4 text-sm text-emerald-50">
-                Signed in as <span className="font-medium">{sessionLabel}</span>.
+                {t("当前登录为", "Signed in as")} <span className="font-medium">{sessionLabel}</span>.
               </div>
             ) : null}
           </section>
@@ -605,13 +630,13 @@ export function InviteLandingPage() {
             {showsAgentForm ? (
               <div className="space-y-4">
                 <div>
-                  <h2 className="text-lg font-semibold">Submit agent details</h2>
+                  <h2 className="text-lg font-semibold">{t("提交代理详情", "Submit agent details")}</h2>
                   <p className="mt-1 text-sm text-zinc-400">
-                    This invite will create an approval request for a new agent in {companyDisplayName}.
+                    {t("此邀请会为 {company} 中的新代理创建审批申请。", "This invite will create an approval request for a new agent in {company}.", { company: companyDisplayName })}
                   </p>
                 </div>
                 <label className="block text-sm">
-                  <span className="mb-1 block text-zinc-400">Agent name</span>
+                  <span className="mb-1 block text-zinc-400">{t("代理名称", "Agent name")}</span>
                   <input
                     className={fieldClassName}
                     value={agentName}
@@ -619,7 +644,7 @@ export function InviteLandingPage() {
                   />
                 </label>
                 <label className="block text-sm">
-                  <span className="mb-1 block text-zinc-400">Adapter type</span>
+                  <span className="mb-1 block text-zinc-400">{t("适配器类型", "Adapter type")}</span>
                   <select
                     className={fieldClassName}
                     value={adapterType}
@@ -627,13 +652,13 @@ export function InviteLandingPage() {
                   >
                     {joinAdapterOptions.map((type) => (
                       <option key={type} value={type} disabled={!ENABLED_INVITE_ADAPTERS.has(type)}>
-                        {getAdapterLabel(type)}{!ENABLED_INVITE_ADAPTERS.has(type) ? " (Coming soon)" : ""}
+                        {getAdapterLabel(type)}{!ENABLED_INVITE_ADAPTERS.has(type) ? t("（即将推出）", " (Coming soon)") : ""}
                       </option>
                     ))}
                   </select>
                 </label>
                 <label className="block text-sm">
-                  <span className="mb-1 block text-zinc-400">Capabilities</span>
+                  <span className="mb-1 block text-zinc-400">{t("能力", "Capabilities")}</span>
                   <textarea
                     className={fieldClassName}
                     rows={4}
@@ -647,19 +672,19 @@ export function InviteLandingPage() {
                   disabled={acceptMutation.isPending || agentName.trim().length === 0}
                   onClick={() => acceptMutation.mutate()}
                 >
-                  {acceptMutation.isPending ? "Working..." : joinButtonLabel}
+                  {acceptMutation.isPending ? t("处理中...", "Working...") : joinButtonLabel}
                 </Button>
               </div>
             ) : requiresHumanAccount ? (
               <div className="space-y-5">
                 <div>
                   <h2 className="text-lg font-semibold">
-                    {authMode === "sign_up" ? "Create your account" : "Sign in to continue"}
+                    {authMode === "sign_up" ? t("创建账户", "Create your account") : t("登录以继续", "Sign in to continue")}
                   </h2>
                   <p className="mt-1 text-sm text-zinc-400">
                     {authMode === "sign_up"
-                      ? `Start with a Paperclip account. After that, you'll come right back here to accept the invite for ${companyDisplayName}.`
-                      : "Use the Paperclip account that already matches this invite. If you do not have one yet, switch back to create account."}
+                      ? t("先创建 Paperclip 账户。完成后，你会回到这里接受 {company} 的邀请。", "Start with a Paperclip account. After that, you'll come right back here to accept the invite for {company}.", { company: companyDisplayName })
+                      : t("请使用与此邀请匹配的 Paperclip 账户。如果你还没有账户，请切回创建账户。", "Use the Paperclip account that already matches this invite. If you do not have one yet, switch back to create account.")}
                   </p>
                 </div>
 
@@ -676,7 +701,7 @@ export function InviteLandingPage() {
                       setAuthMode("sign_up");
                     }}
                   >
-                    Create account
+                    {t("创建账户", "Create account")}
                   </button>
                   <button
                     type="button"
@@ -690,7 +715,7 @@ export function InviteLandingPage() {
                       setAuthMode("sign_in");
                     }}
                   >
-                    I already have an account
+                    {t("我已有账户", "I already have an account")}
                   </button>
                 </div>
 
@@ -702,7 +727,7 @@ export function InviteLandingPage() {
                     event.preventDefault();
                     if (authMutation.isPending) return;
                     if (!authCanSubmit) {
-                      setAuthFeedback({ tone: "error", message: "Please fill in all required fields." });
+                      setAuthFeedback({ tone: "error", message: t("请填写所有必填字段。", "Please fill in all required fields.") });
                       return;
                     }
                     authMutation.mutate();
@@ -711,7 +736,7 @@ export function InviteLandingPage() {
                 >
                   {authMode === "sign_up" ? (
                     <label className="block text-sm">
-                      <span className="mb-1 block text-zinc-400">Name</span>
+                      <span className="mb-1 block text-zinc-400">{t("姓名", "Name")}</span>
                       <input
                         name="name"
                         className={fieldClassName}
@@ -726,7 +751,7 @@ export function InviteLandingPage() {
                     </label>
                   ) : null}
                   <label className="block text-sm">
-                    <span className="mb-1 block text-zinc-400">Email</span>
+                    <span className="mb-1 block text-zinc-400">{t("邮箱", "Email")}</span>
                     <input
                       name="email"
                       type="email"
@@ -741,7 +766,7 @@ export function InviteLandingPage() {
                     />
                   </label>
                   <label className="block text-sm">
-                    <span className="mb-1 block text-zinc-400">Password</span>
+                    <span className="mb-1 block text-zinc-400">{t("密码", "Password")}</span>
                     <input
                       name="password"
                       type="password"
@@ -770,17 +795,17 @@ export function InviteLandingPage() {
                     aria-disabled={!authCanSubmit || authMutation.isPending}
                   >
                     {authMutation.isPending
-                      ? "Working..."
+                      ? t("处理中...", "Working...")
                       : authMode === "sign_in"
-                        ? "Sign in and continue"
-                        : "Create account and continue"}
+                        ? t("登录并继续", "Sign in and continue")
+                        : t("创建账户并继续", "Create account and continue")}
                   </Button>
                 </form>
 
                 <p className="text-xs leading-5 text-zinc-500">
                   {authMode === "sign_up"
-                    ? "Already signed up before? Use the existing-account option instead so the invite lands on the right Paperclip user."
-                    : "No account yet? Switch back to create account so you can accept the invite with a new login."}
+                    ? t("之前注册过？请使用已有账户选项，确保邀请落到正确的 Paperclip 用户。", "Already signed up before? Use the existing-account option instead so the invite lands on the right Paperclip user.")
+                    : t("还没有账户？切回创建账户，即可用新登录接受邀请。", "No account yet? Switch back to create account so you can accept the invite with a new login.")}
                 </p>
               </div>
             ) : (
@@ -788,25 +813,25 @@ export function InviteLandingPage() {
                 <div>
                   <h2 className="text-lg font-semibold">
                     {shouldAutoAcceptHumanInvite
-                      ? "Submitting join request"
+                      ? t("正在提交加入申请", "Submitting join request")
                       : invite.inviteType === "bootstrap_ceo"
-                        ? "Accept bootstrap invite"
-                        : "Accept company invite"}
+                        ? t("接受初始化邀请", "Accept bootstrap invite")
+                        : t("接受公司邀请", "Accept company invite")}
                   </h2>
                   <p className="mt-1 text-sm text-zinc-400">
                     {shouldAutoAcceptHumanInvite
-                      ? `Submitting your join request for ${companyDisplayName}.`
+                      ? t("正在提交你加入 {company} 的申请。", "Submitting your join request for {company}.", { company: companyDisplayName })
                       : isCurrentMember
-                      ? `This account already belongs to ${companyDisplayName}.`
-                      : `This will ${
-                          invite.inviteType === "bootstrap_ceo" ? "finish setting up Paperclip" : `submit or complete your join request for ${companyDisplayName}`
-                        }.`}
+                      ? t("此账户已经属于 {company}。", "This account already belongs to {company}.", { company: companyDisplayName })
+                      : invite.inviteType === "bootstrap_ceo"
+                        ? t("这会完成 Paperclip 设置。", "This will finish setting up Paperclip.")
+                        : t("这会提交或完成你加入 {company} 的申请。", "This will submit or complete your join request for {company}.", { company: companyDisplayName })}
                   </p>
                 </div>
                 {error ? <p className="text-xs text-red-400">{error}</p> : null}
                 {shouldAutoAcceptHumanInvite ? (
                   <div className="text-sm text-zinc-400">
-                    {acceptMutation.isPending ? "Submitting request..." : "Finishing sign-in..."}
+                    {acceptMutation.isPending ? t("正在提交申请...", "Submitting request...") : t("正在完成登录...", "Finishing sign-in...")}
                   </div>
                 ) : (
                   <Button
@@ -814,7 +839,7 @@ export function InviteLandingPage() {
                     disabled={acceptMutation.isPending || isCurrentMember}
                     onClick={() => acceptMutation.mutate()}
                   >
-                    {acceptMutation.isPending ? "Working..." : joinButtonLabel}
+                    {acceptMutation.isPending ? t("处理中...", "Working...") : joinButtonLabel}
                   </Button>
                 )}
               </div>
