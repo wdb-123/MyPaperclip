@@ -55,6 +55,7 @@ import {
   issueThreadInteractionService,
   ISSUE_LIST_DEFAULT_LIMIT,
   ISSUE_LIST_MAX_LIMIT,
+  issueAssigneeResolutionService,
   issueReferenceService,
   issueService,
   clampIssueListLimit,
@@ -748,6 +749,7 @@ export function issueRoutes(
   const projectsSvc = projectService(db);
   const goalsSvc = goalService(db);
   const issueApprovalsSvc = issueApprovalService(db);
+  const issueAssigneeResolver = issueAssigneeResolutionService(db);
   const executionWorkspacesSvc = executionWorkspaceServiceDirect(db);
   const workProductsSvc = workProductService(db);
   const documentsSvc = documentService(db);
@@ -1195,6 +1197,12 @@ export function issueRoutes(
     }
     return resolved.agent.id;
   }
+
+  function stripIssueAssigneePosition<T extends { assigneePositionId?: unknown; resolvedPositionId?: unknown }>(input: T) {
+    const { assigneePositionId: _assigneePositionId, resolvedPositionId: _resolvedPositionId, ...rest } = input;
+    return rest;
+  }
+
   function toValidTimestamp(value: Date | string | null | undefined) {
     if (!value) return null;
     const timestamp = value instanceof Date ? value.getTime() : new Date(value).getTime();
@@ -2247,9 +2255,14 @@ export function issueRoutes(
     const companyId = req.params.companyId as string;
     assertCompanyAccess(req, companyId);
     assertNoAgentHostWorkspaceCommandMutation(req, collectIssueWorkspaceCommandPaths(req.body));
-    if (req.body.assigneeAgentId || req.body.assigneeUserId) {
+    const resolvedAssignee = await issueAssigneeResolver.resolvePositionSelection(companyId, req.body);
+    if (resolvedAssignee.assigneeAgentId || resolvedAssignee.assigneeUserId || resolvedAssignee.resolvedPositionId) {
       await assertCanAssignTasks(req, companyId);
     }
+    const createInput = stripIssueAssigneePosition({
+      ...req.body,
+      ...resolvedAssignee,
+    }) as typeof req.body;
     await assertIssueEnvironmentSelection(companyId, req.body.executionWorkspaceSettings?.environmentId);
 
     const actor = getActorInfo(req);
@@ -2257,10 +2270,10 @@ export function issueRoutes(
       normalizeIssueExecutionPolicy(req.body.executionPolicy),
       actor.actorType,
     );
-    assertCanManageIssueMonitor(req, req.body.assigneeAgentId ?? null, Boolean(executionPolicy?.monitor));
+    assertCanManageIssueMonitor(req, createInput.assigneeAgentId ?? null, Boolean(executionPolicy?.monitor));
     const issue = await svc.create(companyId, {
-      ...req.body,
-      executionPolicy,
+      ...createInput,
+      executionPolicy: executionPolicy as Record<string, unknown> | null,
       createdByAgentId: actor.agentId,
       createdByUserId: actor.actorType === "user" ? actor.actorId : null,
     });
@@ -2341,9 +2354,14 @@ export function issueRoutes(
     }
     assertCompanyAccess(req, parent.companyId);
     assertNoAgentHostWorkspaceCommandMutation(req, collectIssueWorkspaceCommandPaths(req.body));
-    if (req.body.assigneeAgentId || req.body.assigneeUserId) {
+    const resolvedAssignee = await issueAssigneeResolver.resolvePositionSelection(parent.companyId, req.body);
+    if (resolvedAssignee.assigneeAgentId || resolvedAssignee.assigneeUserId || resolvedAssignee.resolvedPositionId) {
       await assertCanAssignTasks(req, parent.companyId);
     }
+    const createInput = stripIssueAssigneePosition({
+      ...req.body,
+      ...resolvedAssignee,
+    }) as typeof req.body;
     await assertIssueEnvironmentSelection(parent.companyId, req.body.executionWorkspaceSettings?.environmentId);
 
     const actor = getActorInfo(req);
@@ -2351,10 +2369,10 @@ export function issueRoutes(
       normalizeIssueExecutionPolicy(req.body.executionPolicy),
       actor.actorType,
     );
-    assertCanManageIssueMonitor(req, req.body.assigneeAgentId ?? null, Boolean(executionPolicy?.monitor));
+    assertCanManageIssueMonitor(req, createInput.assigneeAgentId ?? null, Boolean(executionPolicy?.monitor));
     const { issue, parentBlockerAdded } = await svc.createChild(parent.id, {
-      ...req.body,
-      executionPolicy,
+      ...createInput,
+      executionPolicy: executionPolicy as Record<string, unknown> | null,
       createdByAgentId: actor.agentId,
       createdByUserId: actor.actorType === "user" ? actor.actorId : null,
       actorAgentId: actor.agentId,
@@ -2452,10 +2470,21 @@ export function issueRoutes(
     const actor = getActorInfo(req);
     const isClosed = isClosedIssueStatus(existing.status);
     const isBlocked = existing.status === "blocked";
-    const normalizedAssigneeAgentId = await normalizeIssueAssigneeAgentReference(
-      existing.companyId,
-      req.body.assigneeAgentId as string | null | undefined,
-    );
+    const hasAssigneePositionSelection =
+      typeof req.body.assigneePositionId === "string" && req.body.assigneePositionId.trim().length > 0;
+    const normalizedAssigneeAgentInput = hasAssigneePositionSelection
+      ? (req.body.assigneeAgentId as string | null | undefined)
+      : await normalizeIssueAssigneeAgentReference(
+          existing.companyId,
+          req.body.assigneeAgentId as string | null | undefined,
+        );
+    const resolvedAssigneePatch = await issueAssigneeResolver.resolvePositionSelection(existing.companyId, {
+      assigneeAgentId: normalizedAssigneeAgentInput,
+      assigneeUserId: req.body.assigneeUserId as string | null | undefined,
+      assigneePositionId: req.body.assigneePositionId as string | null | undefined,
+    });
+    const normalizedAssigneeAgentId = resolvedAssigneePatch.assigneeAgentId;
+    const normalizedAssigneeUserId = resolvedAssigneePatch.assigneeUserId;
     const titleOrDescriptionChanged = req.body.title !== undefined || req.body.description !== undefined;
     const existingRelations =
       Array.isArray(req.body.blockedByIssueIds)
@@ -2468,6 +2497,7 @@ export function issueRoutes(
       resume: resumeRequested,
       interrupt: interruptRequested,
       hiddenAt: hiddenAtRaw,
+      assigneePositionId: _assigneePositionId,
       ...updateFields
     } = req.body;
     const shouldCancelActiveRunForCancelledStatus =
@@ -2573,6 +2603,9 @@ export function issueRoutes(
     if (normalizedAssigneeAgentId !== undefined) {
       updateFields.assigneeAgentId = normalizedAssigneeAgentId;
     }
+    if (normalizedAssigneeUserId !== undefined) {
+      updateFields.assigneeUserId = normalizedAssigneeUserId;
+    }
     const monitorChanged = monitorPoliciesEqual(previousExecutionPolicy, nextExecutionPolicy) === false;
     assertCanManageIssueMonitor(req, existing.assigneeAgentId, req.body.executionPolicy !== undefined && monitorChanged);
 
@@ -2583,8 +2616,7 @@ export function issueRoutes(
       requestedStatus: typeof updateFields.status === "string" ? updateFields.status : undefined,
       requestedAssigneePatch: {
         assigneeAgentId: normalizedAssigneeAgentId,
-        assigneeUserId:
-          req.body.assigneeUserId === undefined ? undefined : (req.body.assigneeUserId as string | null),
+        assigneeUserId: normalizedAssigneeUserId,
       },
       actor: {
         agentId: actor.agentId ?? null,
@@ -2694,8 +2726,9 @@ export function issueRoutes(
             companyId: existing.companyId,
             assigneePatch: {
               assigneeAgentId: normalizedAssigneeAgentId === undefined ? "__omitted__" : normalizedAssigneeAgentId,
-              assigneeUserId:
-                req.body.assigneeUserId === undefined ? "__omitted__" : req.body.assigneeUserId,
+              assigneeUserId: normalizedAssigneeUserId === undefined ? "__omitted__" : normalizedAssigneeUserId,
+              assigneePositionId:
+                req.body.assigneePositionId === undefined ? "__omitted__" : req.body.assigneePositionId,
             },
             currentAssignee: {
               assigneeAgentId: existing.assigneeAgentId,

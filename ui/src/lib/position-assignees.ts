@@ -27,9 +27,8 @@ export function buildPositionAssigneeOptions(input: {
   agents?: AssignableAgent[] | null;
   userLabel: (userId: string) => string | null;
 }): PositionAssigneeOption[] {
-  // TODO(position-assignment): Keep this UI helper as presentation only.
-  // Issue create/update routes need a server-side position resolver so API
-  // clients, agents, and plugins get the same single-assignee behavior.
+  // Keep this UI helper as presentation only. The issue create/update API also
+  // accepts assigneePositionId and resolves it server-side before persistence.
   const agentById = new Map(
     (input.agents ?? [])
       .filter((agent) => agent.status !== "terminated")

@@ -1,7 +1,7 @@
 # Human Organization Workflow Plan
 
 Date: 2026-05-09
-Status: proposal
+Status: implementation in progress
 
 ## Goal
 
@@ -267,6 +267,8 @@ Add optional links:
 
 The assignee stays either `assignee_user_id` or `assignee_agent_id`. Department and position provide routing and governance context. A position selection must be resolved server-side before issue creation or update is committed.
 
+Implementation note: issue create, child-create, and update routes now accept `assigneePositionId` as a selector. The selector is resolved server-side to exactly one concrete `assignee_agent_id` or `assignee_user_id` before the issue write is committed; `assigneePositionId` itself is not persisted on the issue.
+
 ### Approvals
 
 Keep the existing `approvals` table for approval records.
@@ -414,7 +416,7 @@ Governance follow-up required before UI expansion:
 - `decideStage()` now runs in a transaction with conditional updates for the current `in_progress` stage.
 - Define `revision_requested` as a stage, issue, and approval transition, not only a participant decision.
 - Workflow `approval` stages now create linked `approvals` and `issue_approvals` rows; workflow decisions update `approvals.status` and emit `approval.*` activity.
-- Move position assignment resolution into a server-side helper used by issue create/update routes.
+- Position assignment resolution now lives in a server-side helper used by issue create/update routes.
 - Workflow stages now have explicit `stage_order`; pipeline order must not depend on timestamp ordering.
 
 Organization governance constraints landed:

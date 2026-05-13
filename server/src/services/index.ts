@@ -15,6 +15,7 @@ export {
 export { projectService } from "./projects.js";
 export { organizationService } from "./organization.js";
 export { workflowService } from "./workflows.js";
+export { issueAssigneeResolutionService } from "./issue-assignee-resolution.js";
 export {
   clampIssueListLimit,
   ISSUE_LIST_DEFAULT_LIMIT,
