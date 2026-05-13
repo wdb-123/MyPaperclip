@@ -345,6 +345,12 @@ export function OrgChart() {
     [positions],
   );
 
+  const positionMap = useMemo(() => {
+    const m = new Map<string, Position>();
+    for (const position of activePositions) m.set(position.id, position);
+    return m;
+  }, [activePositions]);
+
   const activeDepartments = useMemo(
     () => (departments ?? []).filter((department) => department.status === "active"),
     [departments],
@@ -400,6 +406,32 @@ export function OrgChart() {
     setPositionDraftName("");
     setPositionDraftReportsToId("");
   }, []);
+
+  const getDepartmentLineageIds = useCallback((departmentId: string) => {
+    const ids: string[] = [];
+    let cursor: string | null = departmentId;
+    const visited = new Set<string>();
+
+    while (cursor && !visited.has(cursor)) {
+      visited.add(cursor);
+      ids.push(cursor);
+      cursor = departmentMap.get(cursor)?.parentDepartmentId ?? null;
+    }
+
+    return ids;
+  }, [departmentMap]);
+
+  const getReportTargetPositions = useCallback((departmentId: string) => {
+    const lineageIds = new Set(getDepartmentLineageIds(departmentId));
+    return activePositions.filter((position) => position.departmentId && lineageIds.has(position.departmentId));
+  }, [activePositions, getDepartmentLineageIds]);
+
+  const formatPositionWithDepartment = useCallback((position: Position) => {
+    const departmentName = position.departmentId
+      ? departmentMap.get(position.departmentId)?.name
+      : null;
+    return departmentName ? `${position.name} · ${departmentName}` : position.name;
+  }, [departmentMap]);
 
   const invalidateOrganization = useCallback(async () => {
     if (!selectedCompanyId) return;
@@ -481,11 +513,15 @@ export function OrgChart() {
 
   useEffect(() => {
     if (!positionDraftReportsToId) return;
-    const target = activePositions.find((position) => position.id === positionDraftReportsToId);
-    if (!target || target.departmentId !== positionDraftDepartmentId) {
+    if (!positionDraftDepartmentId) {
+      setPositionDraftReportsToId("");
+      return;
+    }
+    const availableTargets = getReportTargetPositions(positionDraftDepartmentId);
+    if (!availableTargets.some((position) => position.id === positionDraftReportsToId)) {
       setPositionDraftReportsToId("");
     }
-  }, [activePositions, positionDraftDepartmentId, positionDraftReportsToId]);
+  }, [getReportTargetPositions, positionDraftDepartmentId, positionDraftReportsToId]);
 
   const chartRoots = useMemo(() => {
     if (activePositions.length > 0) {
@@ -848,7 +884,9 @@ export function OrgChart() {
           </div>
         ) : (
           <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-3">
-            {departmentRows.map(({ department, childCount, depth, parentName, positions: departmentPositions }) => (
+            {departmentRows.map(({ department, childCount, depth, parentName, positions: departmentPositions }) => {
+              const reportTargetPositions = getReportTargetPositions(department.id);
+              return (
               <div key={department.id} className="rounded-md border border-border bg-background px-3 py-2">
                 <div className="flex items-start justify-between gap-2">
                   <div className="min-w-0" style={{ paddingLeft: `${Math.min(depth, 4) * 12}px` }}>
@@ -876,11 +914,19 @@ export function OrgChart() {
                         const assignmentCount = (positionAssignments ?? []).filter(
                           (assignment) => assignment.positionId === position.id && assignment.status === "active",
                         ).length;
+                        const reportsTo = position.reportsToPositionId ? positionMap.get(position.reportsToPositionId) : null;
                         return (
-                          <span key={position.id} className="rounded border border-border bg-background px-2 py-1 text-xs">
-                            {position.name}
-                            <span className="ml-1 text-muted-foreground">
-                              {assignmentCount > 0 ? t("已任职", "Filled") : t("空缺", "Open")}
+                          <span key={position.id} className="grid rounded border border-border bg-background px-2 py-1 text-xs">
+                            <span>
+                              {position.name}
+                              <span className="ml-1 text-muted-foreground">
+                                {assignmentCount > 0 ? t("已任职", "Filled") : t("空缺", "Open")}
+                              </span>
+                            </span>
+                            <span className="text-muted-foreground">
+                              {reportsTo
+                                ? `${t("汇报给", "Reports to")}: ${formatPositionWithDepartment(reportsTo)}`
+                                : t("顶层岗位", "Top role")}
                             </span>
                           </span>
                         );
@@ -994,11 +1040,16 @@ export function OrgChart() {
                         value={positionDraftReportsToId}
                         onChange={(event) => setPositionDraftReportsToId(event.target.value)}
                       >
-                        <option value="">{t("部门负责人（顶层岗位）", "Department lead / top role")}</option>
-                        {departmentPositions.map((position) => (
-                          <option key={position.id} value={position.id}>{position.name}</option>
+                        <option value="">{t("顶层岗位（不汇报给其他岗位）", "Top role / no reporting line")}</option>
+                        {reportTargetPositions.map((position) => (
+                          <option key={position.id} value={position.id}>{formatPositionWithDepartment(position)}</option>
                         ))}
                       </select>
+                      <span className="text-xs font-normal text-muted-foreground">
+                        {reportTargetPositions.length === 0
+                          ? t("当前部门和上级部门还没有可选岗位。", "No positions are available in this department or its parent departments yet.")
+                          : t("可选择本部门或上级部门链路中的岗位。", "You can choose a position from this department or its parent department chain.")}
+                      </span>
                     </label>
                     <div className="flex justify-end gap-2">
                       <Button
@@ -1024,7 +1075,8 @@ export function OrgChart() {
                   </form>
                 ) : null}
               </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </div>
