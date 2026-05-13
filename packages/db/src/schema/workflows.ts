@@ -49,6 +49,7 @@ export const workflowStageInstances = pgTable(
     workflowInstanceId: uuid("workflow_instance_id").notNull().references(() => workflowInstances.id, { onDelete: "cascade" }),
     stageKey: text("stage_key").notNull(),
     stageType: text("stage_type").notNull(),
+    stageOrder: integer("stage_order").notNull().default(0),
     status: text("status").notNull().default("pending"),
     requiredDecisions: integer("required_decisions").notNull().default(1),
     dueAt: timestamp("due_at", { withTimezone: true }),
@@ -57,7 +58,7 @@ export const workflowStageInstances = pgTable(
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => ({
-    workflowIdx: index("workflow_stage_instances_workflow_idx").on(table.companyId, table.workflowInstanceId),
+    workflowIdx: index("workflow_stage_instances_workflow_idx").on(table.companyId, table.workflowInstanceId, table.stageOrder),
     statusIdx: index("workflow_stage_instances_status_idx").on(table.companyId, table.status),
   }),
 );

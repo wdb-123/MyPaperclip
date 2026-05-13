@@ -411,10 +411,19 @@ Initial API slice landed:
 
 Governance follow-up required before UI expansion:
 
-- Put `decideStage()` in a transaction with conditional updates for the current `in_progress` stage.
+- `decideStage()` now runs in a transaction with conditional updates for the current `in_progress` stage.
 - Define `revision_requested` as a stage, issue, and approval transition, not only a participant decision.
 - Link workflow `approval` stages to `approvals` and advance workflow from approval state changes.
 - Move position assignment resolution into a server-side helper used by issue create/update routes.
+- Workflow stages now have explicit `stage_order`; pipeline order must not depend on timestamp ordering.
+
+Organization governance constraints landed:
+
+- `departments.parent_department_id` rejects cycles.
+- `positions.reports_to_position_id` rejects cycles.
+- Active assignments cannot be created for archived positions.
+- Ending an assignment auto-fills `ended_at` when it was omitted.
+- Position assignment principals must belong to the same company.
 
 ### Phase 3: Inbox And Feishu Routing
 

@@ -16,8 +16,6 @@ type CreatePositionAssignmentInput = typeof positionAssignments.$inferInsert;
 type UpdatePositionAssignmentInput = Partial<Omit<CreatePositionAssignmentInput, "id" | "companyId" | "positionId" | "principalType" | "principalId" | "createdAt">>;
 
 export function organizationService(db: Db) {
-  // TODO(org-governance): Enforce acyclic department and position trees before
-  // accepting parentDepartmentId or reportsToPositionId changes.
   async function assertDepartmentInCompany(companyId: string, departmentId: string | null | undefined) {
     if (!departmentId) return;
     const [row] = await db
@@ -65,6 +63,65 @@ export function organizationService(db: Db) {
     return false;
   }
 
+  async function wouldCreateDepartmentCycle(input: {
+    companyId: string;
+    departmentId: string;
+    parentDepartmentId: string | null | undefined;
+  }) {
+    let cursor = input.parentDepartmentId ?? null;
+    const visited = new Set<string>();
+
+    while (cursor) {
+      if (cursor === input.departmentId) return true;
+      if (visited.has(cursor)) return true;
+      visited.add(cursor);
+
+      const [row] = await db
+        .select({ parentDepartmentId: departments.parentDepartmentId })
+        .from(departments)
+        .where(and(eq(departments.id, cursor), eq(departments.companyId, input.companyId)))
+        .limit(1);
+      if (!row) return true;
+      cursor = row.parentDepartmentId ?? null;
+    }
+
+    return false;
+  }
+
+  async function wouldCreatePositionCycle(input: {
+    companyId: string;
+    positionId: string;
+    reportsToPositionId: string | null | undefined;
+  }) {
+    let cursor = input.reportsToPositionId ?? null;
+    const visited = new Set<string>();
+
+    while (cursor) {
+      if (cursor === input.positionId) return true;
+      if (visited.has(cursor)) return true;
+      visited.add(cursor);
+
+      const [row] = await db
+        .select({ reportsToPositionId: positions.reportsToPositionId })
+        .from(positions)
+        .where(and(eq(positions.id, cursor), eq(positions.companyId, input.companyId)))
+        .limit(1);
+      if (!row) return true;
+      cursor = row.reportsToPositionId ?? null;
+    }
+
+    return false;
+  }
+
+  async function getPositionForAssignment(companyId: string, positionId: string) {
+    const [row] = await db
+      .select({ id: positions.id, status: positions.status })
+      .from(positions)
+      .where(and(eq(positions.id, positionId), eq(positions.companyId, companyId)))
+      .limit(1);
+    return row ?? null;
+  }
+
   return {
     async listDepartments(companyId: string) {
       return db
@@ -92,6 +149,13 @@ export function organizationService(db: Db) {
       if (!existing) return null;
       if (input.parentDepartmentId === id) return null;
       if (input.parentDepartmentId && !(await assertDepartmentInCompany(existing.companyId, input.parentDepartmentId))) {
+        return null;
+      }
+      if (input.parentDepartmentId && await wouldCreateDepartmentCycle({
+        companyId: existing.companyId,
+        departmentId: id,
+        parentDepartmentId: input.parentDepartmentId,
+      })) {
         return null;
       }
       const [row] = await db
@@ -128,6 +192,13 @@ export function organizationService(db: Db) {
       if (input.reportsToPositionId === id) return null;
       if (input.departmentId && !(await assertDepartmentInCompany(existing.companyId, input.departmentId))) return null;
       if (input.reportsToPositionId && !(await assertPositionInCompany(existing.companyId, input.reportsToPositionId))) return null;
+      if (input.reportsToPositionId && await wouldCreatePositionCycle({
+        companyId: existing.companyId,
+        positionId: id,
+        reportsToPositionId: input.reportsToPositionId,
+      })) {
+        return null;
+      }
       const [row] = await db
         .update(positions)
         .set({ ...input, updatedAt: new Date() })
@@ -150,18 +221,31 @@ export function organizationService(db: Db) {
     },
 
     async createPositionAssignment(companyId: string, input: Omit<CreatePositionAssignmentInput, "companyId">) {
-      // TODO(org-governance): Reject active assignments for archived positions
-      // and auto-fill endedAt when status transitions to ended.
-      if (!(await assertPositionInCompany(companyId, input.positionId))) return null;
+      const position = await getPositionForAssignment(companyId, input.positionId);
+      if (!position) return null;
+      const nextStatus = input.status ?? "active";
+      if (nextStatus === "active" && position.status === "archived") return null;
       if (!(await assertPrincipalInCompany(companyId, input.principalType, input.principalId))) return null;
-      const [row] = await db.insert(positionAssignments).values({ ...input, companyId }).returning();
+      const values = {
+        ...input,
+        companyId,
+        endedAt: nextStatus === "ended" && !input.endedAt ? new Date() : input.endedAt,
+      };
+      const [row] = await db.insert(positionAssignments).values(values).returning();
       return row ?? null;
     },
 
     async updatePositionAssignment(id: string, input: UpdatePositionAssignmentInput) {
+      const existing = await this.getPositionAssignment(id);
+      if (!existing) return null;
+      const nextStatus = input.status ?? existing.status;
+      const values = {
+        ...input,
+        endedAt: nextStatus === "ended" && !input.endedAt && !existing.endedAt ? new Date() : input.endedAt,
+      };
       const [row] = await db
         .update(positionAssignments)
-        .set({ ...input, updatedAt: new Date() })
+        .set({ ...values, updatedAt: new Date() })
         .where(eq(positionAssignments.id, id))
         .returning();
       return row ?? null;
