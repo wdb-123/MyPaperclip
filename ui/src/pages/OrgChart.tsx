@@ -282,14 +282,12 @@ export function OrgChart() {
   const navigate = useNavigate();
   const [departmentName, setDepartmentName] = useState("");
   const [departmentParentId, setDepartmentParentId] = useState("");
-  const [positionName, setPositionName] = useState("");
-  const [positionDepartmentId, setPositionDepartmentId] = useState("");
-  const [positionReportsToId, setPositionReportsToId] = useState("");
-  const [assignmentPositionId, setAssignmentPositionId] = useState("");
-  const [assignmentPrincipalType, setAssignmentPrincipalType] = useState<"user" | "agent">("agent");
-  const [assignmentPrincipalId, setAssignmentPrincipalId] = useState("");
+  const [showTopLevelDepartmentForm, setShowTopLevelDepartmentForm] = useState(false);
   const [childDepartmentParentId, setChildDepartmentParentId] = useState<string | null>(null);
   const [childDepartmentName, setChildDepartmentName] = useState("");
+  const [positionDraftDepartmentId, setPositionDraftDepartmentId] = useState<string | null>(null);
+  const [positionDraftName, setPositionDraftName] = useState("");
+  const [positionDraftReportsToId, setPositionDraftReportsToId] = useState("");
   const departmentNameInputRef = useRef<HTMLInputElement>(null);
 
   const { data: orgTree, isLoading } = useQuery({
@@ -387,41 +385,20 @@ export function OrgChart() {
         parentName: department.parentDepartmentId
           ? departmentMap.get(department.parentDepartmentId)?.name ?? t("未知上级", "Unknown parent")
           : t("公司直属", "Company-level"),
+        positions: activePositions.filter((position) => position.departmentId === department.id),
       }))
       .sort((a, b) => a.depth - b.depth || a.department.name.localeCompare(b.department.name));
-  }, [activeDepartments, departmentMap, t]);
-
-  const activePositionAssignments = useMemo(
-    () => (positionAssignments ?? []).filter((assignment) => assignment.status === "active"),
-    [positionAssignments],
-  );
-
-  const occupiedPositionIds = useMemo(() => {
-    const ids = new Set<string>();
-    for (const assignment of activePositionAssignments) ids.add(assignment.positionId);
-    return ids;
-  }, [activePositionAssignments]);
-
-  const openPositions = useMemo(
-    () => activePositions.filter((position) => !occupiedPositionIds.has(position.id)),
-    [activePositions, occupiedPositionIds],
-  );
-
-  const reportTargetPositions = useMemo(() => {
-    if (!positionDepartmentId) return [];
-    return activePositions.filter((position) => position.departmentId === positionDepartmentId);
-  }, [activePositions, positionDepartmentId]);
-
-  const activeAgents = useMemo(
-    () => (agents ?? []).filter((agent) => agent.status !== "terminated" && agent.status !== "pending_approval"),
-    [agents],
-  );
-
-  const activeUsers = userDirectory?.users ?? [];
+  }, [activeDepartments, activePositions, departmentMap, t]);
 
   const startChildDepartment = useCallback((parentDepartmentId: string) => {
     setChildDepartmentParentId(parentDepartmentId);
     setChildDepartmentName("");
+  }, []);
+
+  const startPositionDraft = useCallback((departmentId: string) => {
+    setPositionDraftDepartmentId(departmentId);
+    setPositionDraftName("");
+    setPositionDraftReportsToId("");
   }, []);
 
   const invalidateOrganization = useCallback(async () => {
@@ -442,6 +419,7 @@ export function OrgChart() {
     onSuccess: async () => {
       setDepartmentName("");
       setDepartmentParentId("");
+      setShowTopLevelDepartmentForm(false);
       setChildDepartmentName("");
       setChildDepartmentParentId(null);
       await invalidateOrganization();
@@ -457,44 +435,22 @@ export function OrgChart() {
   });
 
   const createPositionMutation = useMutation({
-    mutationFn: () =>
+    mutationFn: (input: { name: string; departmentId: string; reportsToPositionId: string | null }) =>
       organizationApi.createPosition(selectedCompanyId!, {
-        name: positionName.trim(),
-        departmentId: positionDepartmentId,
-        reportsToPositionId: positionReportsToId || null,
+        name: input.name,
+        departmentId: input.departmentId,
+        reportsToPositionId: input.reportsToPositionId,
       }),
     onSuccess: async () => {
-      setPositionName("");
-      setPositionDepartmentId("");
-      setPositionReportsToId("");
+      setPositionDraftName("");
+      setPositionDraftDepartmentId(null);
+      setPositionDraftReportsToId("");
       await invalidateOrganization();
       pushToast({ title: t("岗位已创建", "Position created"), tone: "success" });
     },
     onError: (error) => {
       pushToast({
         title: t("创建岗位失败", "Failed to create position"),
-        body: error instanceof Error ? error.message : t("未知错误", "Unknown error"),
-        tone: "error",
-      });
-    },
-  });
-
-  const createAssignmentMutation = useMutation({
-    mutationFn: () =>
-      organizationApi.createPositionAssignment(selectedCompanyId!, {
-        positionId: assignmentPositionId,
-        principalType: assignmentPrincipalType,
-        principalId: assignmentPrincipalId,
-      }),
-    onSuccess: async () => {
-      setAssignmentPositionId("");
-      setAssignmentPrincipalId("");
-      await invalidateOrganization();
-      pushToast({ title: t("任职已创建", "Assignment created"), tone: "success" });
-    },
-    onError: (error) => {
-      pushToast({
-        title: t("创建任职失败", "Failed to create assignment"),
         body: error instanceof Error ? error.message : t("未知错误", "Unknown error"),
         tone: "error",
       });
@@ -516,28 +472,20 @@ export function OrgChart() {
   }, [childDepartmentParentId, departmentMap, departmentParentId]);
 
   useEffect(() => {
-    if (!positionDepartmentId && activeDepartments.length > 0) {
-      setPositionDepartmentId(activeDepartments[0].id);
+    if (positionDraftDepartmentId && !departmentMap.has(positionDraftDepartmentId)) {
+      setPositionDraftDepartmentId(null);
+      setPositionDraftName("");
+      setPositionDraftReportsToId("");
     }
-    if (positionDepartmentId && !departmentMap.has(positionDepartmentId)) {
-      setPositionDepartmentId(activeDepartments[0]?.id ?? "");
-      setPositionReportsToId("");
-    }
-  }, [activeDepartments, departmentMap, positionDepartmentId]);
+  }, [departmentMap, positionDraftDepartmentId]);
 
   useEffect(() => {
-    if (!positionReportsToId) return;
-    const target = activePositions.find((position) => position.id === positionReportsToId);
-    if (!target || target.departmentId !== positionDepartmentId) {
-      setPositionReportsToId("");
+    if (!positionDraftReportsToId) return;
+    const target = activePositions.find((position) => position.id === positionDraftReportsToId);
+    if (!target || target.departmentId !== positionDraftDepartmentId) {
+      setPositionDraftReportsToId("");
     }
-  }, [activePositions, positionDepartmentId, positionReportsToId]);
-
-  useEffect(() => {
-    if (assignmentPositionId && !openPositions.some((position) => position.id === assignmentPositionId)) {
-      setAssignmentPositionId("");
-    }
-  }, [assignmentPositionId, openPositions]);
+  }, [activePositions, positionDraftDepartmentId, positionDraftReportsToId]);
 
   const chartRoots = useMemo(() => {
     if (activePositions.length > 0) {
@@ -824,201 +772,12 @@ export function OrgChart() {
           </Button>
         </Link>
       </div>
-      <div className="mb-3 grid shrink-0 gap-2 lg:grid-cols-3">
-        <form
-          className="rounded-md border border-border bg-card p-3"
-          onSubmit={(event) => {
-            event.preventDefault();
-            if (!departmentName.trim() || createDepartmentMutation.isPending) return;
-            createDepartmentMutation.mutate({
-              name: departmentName.trim(),
-              parentDepartmentId: departmentParentId || null,
-            });
-          }}
-        >
-          <div className="mb-2 text-sm font-medium">{t("创建部门", "Create Department")}</div>
-          <div className="grid gap-2">
-            <label className="grid gap-1 text-xs font-medium text-muted-foreground">
-              <span>{t("部门名称", "Department name")}</span>
-            <input
-              ref={departmentNameInputRef}
-              className="h-8 rounded-md border border-input bg-background px-2 text-sm outline-none focus:border-ring"
-              value={departmentName}
-              onChange={(event) => setDepartmentName(event.target.value)}
-              placeholder={t("部门名称", "Department name")}
-            />
-            </label>
-            <label className="grid gap-1 text-xs font-medium text-muted-foreground">
-              <span>{t("上级部门", "Parent department")}</span>
-            <select
-              className="h-8 rounded-md border border-input bg-background px-2 text-sm outline-none focus:border-ring"
-              value={departmentParentId}
-              onChange={(event) => setDepartmentParentId(event.target.value)}
-            >
-              <option value="">{t("公司直属（一级部门）", "Company-level department")}</option>
-              {activeDepartments.map((department) => (
-                <option key={department.id} value={department.id}>{department.name}</option>
-              ))}
-            </select>
-            </label>
-            <div className="text-xs leading-5 text-muted-foreground">
-              {t("上级部门只用于创建子部门；一级部门直接挂在公司下。", "Parent department is only for child departments; top-level departments report to the company.")}
-            </div>
-            <Button
-              type="submit"
-              size="sm"
-              disabled={!departmentName.trim() || createDepartmentMutation.isPending}
-            >
-              {createDepartmentMutation.isPending ? t("正在创建...", "Creating...") : t("创建部门", "Create Department")}
-            </Button>
-          </div>
-        </form>
-
-        <form
-          className="rounded-md border border-border bg-card p-3"
-          onSubmit={(event) => {
-            event.preventDefault();
-            if (!positionName.trim() || !positionDepartmentId || createPositionMutation.isPending) return;
-            createPositionMutation.mutate();
-          }}
-        >
-          <div className="mb-2 text-sm font-medium">{t("创建岗位", "Create Position")}</div>
-          <div className="grid gap-2">
-            <label className="grid gap-1 text-xs font-medium text-muted-foreground">
-              <span>{t("岗位名称", "Position name")}</span>
-            <input
-              className="h-8 rounded-md border border-input bg-background px-2 text-sm outline-none focus:border-ring"
-              value={positionName}
-              onChange={(event) => setPositionName(event.target.value)}
-              placeholder={t("岗位名称", "Position name")}
-            />
-            </label>
-            <label className="grid gap-1 text-xs font-medium text-muted-foreground">
-              <span>{t("所属部门", "Department")}</span>
-            <select
-              className="h-8 rounded-md border border-input bg-background px-2 text-sm outline-none focus:border-ring"
-              value={positionDepartmentId}
-              onChange={(event) => setPositionDepartmentId(event.target.value)}
-              disabled={activeDepartments.length === 0}
-            >
-              <option value="">{t("先选择部门", "Select a department first")}</option>
-              {activeDepartments.map((department) => (
-                <option key={department.id} value={department.id}>{department.name}</option>
-              ))}
-            </select>
-            </label>
-            <label className="grid gap-1 text-xs font-medium text-muted-foreground">
-              <span>{t("汇报给", "Reports to")}</span>
-            <select
-              className="h-8 rounded-md border border-input bg-background px-2 text-sm outline-none focus:border-ring"
-              value={positionReportsToId}
-              onChange={(event) => setPositionReportsToId(event.target.value)}
-              disabled={!positionDepartmentId}
-            >
-              <option value="">{t("部门负责人（顶层岗位）", "Department lead / top role")}</option>
-              {reportTargetPositions.map((position) => (
-                <option key={position.id} value={position.id}>{position.name}</option>
-              ))}
-            </select>
-            </label>
-            <div className="text-xs leading-5 text-muted-foreground">
-              {activeDepartments.length === 0
-                ? t("先创建部门，再在部门内创建岗位。", "Create a department before adding positions.")
-                : t("岗位必须归属部门；汇报对象只从同部门岗位里选择。", "Positions must belong to a department; reporting targets are limited to the same department.")}
-            </div>
-            <Button
-              type="submit"
-              size="sm"
-              disabled={!positionName.trim() || !positionDepartmentId || createPositionMutation.isPending}
-            >
-              {createPositionMutation.isPending ? t("正在创建...", "Creating...") : t("创建岗位", "Create Position")}
-            </Button>
-          </div>
-        </form>
-
-        <form
-          className="rounded-md border border-border bg-card p-3"
-          onSubmit={(event) => {
-            event.preventDefault();
-            if (!assignmentPositionId || !assignmentPrincipalId || createAssignmentMutation.isPending) return;
-            createAssignmentMutation.mutate();
-          }}
-        >
-          <div className="mb-2 text-sm font-medium">{t("分配岗位", "Assign Position")}</div>
-          <div className="grid gap-2">
-            <label className="grid gap-1 text-xs font-medium text-muted-foreground">
-              <span>{t("空缺岗位", "Open position")}</span>
-            <select
-              className="h-8 rounded-md border border-input bg-background px-2 text-sm outline-none focus:border-ring"
-              value={assignmentPositionId}
-              onChange={(event) => setAssignmentPositionId(event.target.value)}
-              disabled={openPositions.length === 0}
-            >
-              <option value="">{t("选择岗位", "Select position")}</option>
-              {openPositions.map((position) => (
-                <option key={position.id} value={position.id}>
-                  {position.name}
-                  {position.departmentId && departmentMap.has(position.departmentId)
-                    ? ` · ${departmentMap.get(position.departmentId)?.name}`
-                    : ""}
-                </option>
-              ))}
-            </select>
-            </label>
-            <label className="grid gap-1 text-xs font-medium text-muted-foreground">
-              <span>{t("任职对象类型", "Principal type")}</span>
-            <select
-              className="h-8 rounded-md border border-input bg-background px-2 text-sm outline-none focus:border-ring"
-              value={assignmentPrincipalType}
-              onChange={(event) => {
-                setAssignmentPrincipalType(event.target.value as "user" | "agent");
-                setAssignmentPrincipalId("");
-              }}
-            >
-              <option value="agent">{t("代理", "Agent")}</option>
-              <option value="user">{t("用户", "User")}</option>
-            </select>
-            </label>
-            <label className="grid gap-1 text-xs font-medium text-muted-foreground">
-              <span>{t("任职对象", "Principal")}</span>
-            <select
-              className="h-8 rounded-md border border-input bg-background px-2 text-sm outline-none focus:border-ring"
-              value={assignmentPrincipalId}
-              onChange={(event) => setAssignmentPrincipalId(event.target.value)}
-            >
-              <option value="">{assignmentPrincipalType === "agent" ? t("选择代理", "Select agent") : t("选择用户", "Select user")}</option>
-              {assignmentPrincipalType === "agent"
-                ? activeAgents.map((agent) => (
-                  <option key={agent.id} value={agent.id}>{agent.name}</option>
-                ))
-                : activeUsers.map((entry) => (
-                  <option key={entry.principalId} value={entry.principalId}>
-                    {entry.user?.name || entry.user?.email || entry.principalId}
-                  </option>
-                ))}
-            </select>
-            </label>
-            <div className="text-xs leading-5 text-muted-foreground">
-              {openPositions.length === 0
-                ? t("没有空缺岗位；先创建岗位或结束现有任职。", "No open positions; create a position or end an active assignment first.")
-                : t("任职是把一个空缺岗位交给用户或 Agent，不改变部门层级。", "Assignment fills an open position with a user or agent; it does not change department hierarchy.")}
-            </div>
-            <Button
-              type="submit"
-              size="sm"
-              disabled={!assignmentPositionId || !assignmentPrincipalId || createAssignmentMutation.isPending}
-            >
-              {createAssignmentMutation.isPending ? t("正在分配...", "Assigning...") : t("分配岗位", "Assign Position")}
-            </Button>
-          </div>
-        </form>
-      </div>
       <div className="mb-3 shrink-0 rounded-md border border-border bg-card p-3">
         <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
           <div>
             <div className="text-sm font-medium">{t("部门结构", "Department Structure")}</div>
             <div className="text-xs text-muted-foreground">
-              {t("选择“公司直属”创建一级部门；在某个部门行点击“添加下级”创建子部门。", "Choose company-level for a top-level department; click Add child on a department row to create a child department.")}
+              {t("部门是主容器；在部门卡片里添加下级部门和本部门岗位。", "Departments are the main container; add child departments and positions inside each department card.")}
             </div>
           </div>
           <Button
@@ -1028,22 +787,68 @@ export function OrgChart() {
             onClick={() => {
               setDepartmentParentId("");
               setDepartmentName("");
+              setShowTopLevelDepartmentForm(true);
               setChildDepartmentParentId(null);
               setChildDepartmentName("");
-              departmentNameInputRef.current?.focus();
             }}
           >
             <Plus className="mr-1.5 h-3.5 w-3.5" />
             {t("添加一级部门", "Add top-level")}
           </Button>
         </div>
+        {showTopLevelDepartmentForm ? (
+          <form
+            className="mb-3 grid gap-2 rounded-md border border-border bg-muted/30 p-3 md:max-w-xl"
+            onSubmit={(event) => {
+              event.preventDefault();
+              if (!departmentName.trim() || createDepartmentMutation.isPending) return;
+              createDepartmentMutation.mutate({
+                name: departmentName.trim(),
+                parentDepartmentId: departmentParentId || null,
+              });
+            }}
+          >
+            <label className="grid gap-1 text-xs font-medium text-muted-foreground">
+              <span>{t("一级部门名称", "Top-level department name")}</span>
+              <input
+                ref={departmentNameInputRef}
+                className="h-8 rounded-md border border-input bg-background px-2 text-sm outline-none focus:border-ring"
+                value={departmentName}
+                onChange={(event) => setDepartmentName(event.target.value)}
+                placeholder={t("例如：产品部", "Example: Product")}
+                autoFocus
+              />
+            </label>
+            <div className="flex justify-end gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  setShowTopLevelDepartmentForm(false);
+                  setDepartmentName("");
+                  setDepartmentParentId("");
+                }}
+              >
+                {t("取消", "Cancel")}
+              </Button>
+              <Button
+                type="submit"
+                size="sm"
+                disabled={!departmentName.trim() || createDepartmentMutation.isPending}
+              >
+                {createDepartmentMutation.isPending ? t("正在创建...", "Creating...") : t("创建一级部门", "Create top-level")}
+              </Button>
+            </div>
+          </form>
+        ) : null}
         {departmentRows.length === 0 ? (
           <div className="rounded-md border border-dashed border-border bg-muted/30 px-3 py-4 text-sm text-muted-foreground">
             {t("还没有部门。先创建一个一级部门，再从部门行添加下级部门。", "No departments yet. Create a top-level department first, then add child departments from department rows.")}
           </div>
         ) : (
           <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-3">
-            {departmentRows.map(({ department, childCount, depth, parentName }) => (
+            {departmentRows.map(({ department, childCount, depth, parentName, positions: departmentPositions }) => (
               <div key={department.id} className="rounded-md border border-border bg-background px-3 py-2">
                 <div className="flex items-start justify-between gap-2">
                   <div className="min-w-0" style={{ paddingLeft: `${Math.min(depth, 4) * 12}px` }}>
@@ -1052,11 +857,38 @@ export function OrgChart() {
                       {t("上级", "Parent")}: {parentName}
                     </div>
                   </div>
-                  <span className="shrink-0 rounded border border-border px-1.5 py-0.5 text-[10px] text-muted-foreground">
-                    {t("下级", "Children")} {childCount}
-                  </span>
+                  <div className="flex shrink-0 gap-1">
+                    <span className="rounded border border-border px-1.5 py-0.5 text-[10px] text-muted-foreground">
+                      {t("下级", "Children")} {childCount}
+                    </span>
+                    <span className="rounded border border-border px-1.5 py-0.5 text-[10px] text-muted-foreground">
+                      {t("岗位", "Positions")} {departmentPositions.length}
+                    </span>
+                  </div>
                 </div>
-                <div className="mt-2 flex justify-end">
+                <div className="mt-2 grid gap-1 rounded-md bg-muted/20 p-2">
+                  <div className="text-xs font-medium text-muted-foreground">{t("本部门岗位", "Department positions")}</div>
+                  {departmentPositions.length === 0 ? (
+                    <div className="text-xs text-muted-foreground">{t("暂无岗位，点击“添加岗位”创建。", "No positions yet. Click Add position to create one.")}</div>
+                  ) : (
+                    <div className="flex flex-wrap gap-1">
+                      {departmentPositions.map((position) => {
+                        const assignmentCount = (positionAssignments ?? []).filter(
+                          (assignment) => assignment.positionId === position.id && assignment.status === "active",
+                        ).length;
+                        return (
+                          <span key={position.id} className="rounded border border-border bg-background px-2 py-1 text-xs">
+                            {position.name}
+                            <span className="ml-1 text-muted-foreground">
+                              {assignmentCount > 0 ? t("已任职", "Filled") : t("空缺", "Open")}
+                            </span>
+                          </span>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+                <div className="mt-2 flex flex-wrap justify-end gap-2">
                   <Button
                     type="button"
                     variant="outline"
@@ -1065,6 +897,15 @@ export function OrgChart() {
                   >
                     <Plus className="mr-1.5 h-3.5 w-3.5" />
                     {t("添加下级", "Add child")}
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => startPositionDraft(department.id)}
+                  >
+                    <Plus className="mr-1.5 h-3.5 w-3.5" />
+                    {t("添加岗位", "Add position")}
                   </Button>
                 </div>
                 {childDepartmentParentId === department.id ? (
@@ -1123,49 +964,70 @@ export function OrgChart() {
                     </div>
                   </form>
                 ) : null}
+                {positionDraftDepartmentId === department.id ? (
+                  <form
+                    className="mt-3 grid gap-2 rounded-md border border-border bg-muted/30 p-2"
+                    onSubmit={(event) => {
+                      event.preventDefault();
+                      if (!positionDraftName.trim() || !positionDraftDepartmentId || createPositionMutation.isPending) return;
+                      createPositionMutation.mutate({
+                        name: positionDraftName.trim(),
+                        departmentId: positionDraftDepartmentId,
+                        reportsToPositionId: positionDraftReportsToId || null,
+                      });
+                    }}
+                  >
+                    <label className="grid gap-1 text-xs font-medium text-muted-foreground">
+                      <span>{t("岗位名称", "Position name")}</span>
+                      <input
+                        className="h-8 rounded-md border border-input bg-background px-2 text-sm outline-none focus:border-ring"
+                        value={positionDraftName}
+                        onChange={(event) => setPositionDraftName(event.target.value)}
+                        placeholder={t("例如：产品负责人", "Example: Product Lead")}
+                        autoFocus
+                      />
+                    </label>
+                    <label className="grid gap-1 text-xs font-medium text-muted-foreground">
+                      <span>{t("汇报给", "Reports to")}</span>
+                      <select
+                        className="h-8 rounded-md border border-input bg-background px-2 text-sm outline-none focus:border-ring"
+                        value={positionDraftReportsToId}
+                        onChange={(event) => setPositionDraftReportsToId(event.target.value)}
+                      >
+                        <option value="">{t("部门负责人（顶层岗位）", "Department lead / top role")}</option>
+                        {departmentPositions.map((position) => (
+                          <option key={position.id} value={position.id}>{position.name}</option>
+                        ))}
+                      </select>
+                    </label>
+                    <div className="flex justify-end gap-2">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => {
+                          setPositionDraftDepartmentId(null);
+                          setPositionDraftName("");
+                          setPositionDraftReportsToId("");
+                        }}
+                      >
+                        {t("取消", "Cancel")}
+                      </Button>
+                      <Button
+                        type="submit"
+                        size="sm"
+                        disabled={!positionDraftName.trim() || createPositionMutation.isPending}
+                      >
+                        {createPositionMutation.isPending ? t("正在创建...", "Creating...") : t("创建岗位", "Create position")}
+                      </Button>
+                    </div>
+                  </form>
+                ) : null}
               </div>
             ))}
           </div>
         )}
       </div>
-      {activePositions.length > 0 ? (
-        <div className="mb-3 grid shrink-0 gap-2 md:grid-cols-2 xl:grid-cols-3">
-          {activePositions.slice(0, 6).map((position) => {
-            const assignments = (positionAssignments ?? []).filter(
-              (assignment) => assignment.positionId === position.id && assignment.status === "active",
-            );
-            const department = position.departmentId
-              ? departments?.find((item) => item.id === position.departmentId)
-              : null;
-            return (
-              <div key={position.id} className="rounded-md border border-border bg-card px-3 py-2">
-                <div className="flex items-center justify-between gap-2">
-                  <div className="min-w-0">
-                    <div className="truncate text-sm font-medium">{position.name}</div>
-                    <div className="truncate text-xs text-muted-foreground">
-                      {department?.name ?? t("未归属部门", "No department")}
-                    </div>
-                  </div>
-                  <span className="shrink-0 rounded border border-border px-1.5 py-0.5 text-[10px] text-muted-foreground">
-                    {assignments.length}
-                  </span>
-                </div>
-                <div className="mt-2 flex flex-wrap gap-1">
-                  {assignments.length === 0 ? (
-                    <span className="text-xs text-muted-foreground">{t("暂无任职", "No assignments")}</span>
-                  ) : assignments.map((assignment) => (
-                    <span key={assignment.id} className="rounded bg-muted px-1.5 py-0.5 text-xs">
-                      {assignment.principalType === "agent"
-                        ? agentMap.get(assignment.principalId)?.name ?? assignment.principalId
-                        : userMap.get(assignment.principalId) ?? assignment.principalId}
-                    </span>
-                  ))}
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      ) : null}
       <div
         ref={containerRef}
         data-testid="org-chart-viewport"
