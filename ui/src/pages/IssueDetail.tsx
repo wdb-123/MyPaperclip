@@ -2572,6 +2572,8 @@ export function IssueDetail() {
           issueId={panelIssue.id}
           companyId={panelIssue.companyId}
           currentUserId={currentUserId}
+          users={companyMembers?.users}
+          agents={agents}
           userLabelMap={userLabelMap}
           agentNameMap={agentNameMap}
           compact
@@ -2581,7 +2583,9 @@ export function IssueDetail() {
     return () => closePanel();
   }, [
     agentNameMap,
+    agents,
     closePanel,
+    companyMembers?.users,
     currentUserId,
     handleIssuePropertiesUpdate,
     issuePanelKey,
@@ -4040,6 +4044,8 @@ export function IssueDetail() {
                   issueId={issue.id}
                   companyId={issue.companyId}
                   currentUserId={currentUserId}
+                  users={companyMembers?.users}
+                  agents={agents}
                   userLabelMap={userLabelMap}
                   agentNameMap={agentNameMap}
                   compact
