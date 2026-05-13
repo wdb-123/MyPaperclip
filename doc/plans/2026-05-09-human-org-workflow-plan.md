@@ -434,6 +434,18 @@ Organization governance constraints landed:
 - Send enriched Feishu messages with action URLs.
 - Add delivery status and retry logs.
 
+Initial durable inbox slice landed:
+
+- `notification_inbox_items` persists action items before any external delivery is attempted.
+- Workflow stage start/advance creates inbox items for the active stage participants.
+- Workflow decisions mark the deciding participant's workflow inbox item handled.
+- API reads and mutates inbox items through `GET /api/companies/:companyId/notification-inbox`, `POST /api/notification-inbox-items/:itemId/read`, and `POST /api/notification-inbox-items/:itemId/handle`.
+
+Remaining Phase 3 work:
+
+- Route notification inbox items into the board UI action queue.
+- Add Feishu delivery after durable item creation, including delivery status and retry/error logging.
+
 ### Phase 4: Department-Scoped Permissions
 
 - Resolve permissions through position and department.

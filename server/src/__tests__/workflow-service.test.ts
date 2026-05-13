@@ -5,9 +5,11 @@ import {
   companies,
   companyMemberships,
   createDb,
+  activityLog,
   approvals,
   issueApprovals,
   issues,
+  notificationInboxItems,
   workflowInstances,
   workflowParticipants,
   workflowStageInstances,
@@ -41,6 +43,8 @@ describeEmbeddedPostgres("workflowService governance invariants", () => {
   });
 
   afterEach(async () => {
+    await db.delete(activityLog);
+    await db.delete(notificationInboxItems);
     await db.delete(workflowParticipants);
     await db.delete(workflowStageInstances);
     await db.delete(workflowInstances);
@@ -189,5 +193,61 @@ describeEmbeddedPostgres("workflowService governance invariants", () => {
       decisionNote: "ship it",
       decidedByUserId: "reviewer-1",
     });
+  });
+
+  it("routes workflow stages into durable notification inbox items", async () => {
+    const { companyId, issueId } = await seedIssue();
+    await svc.startIssueWorkflow(companyId, issueId, {
+      triggerKind: "manual",
+      stages: [
+        {
+          key: "review",
+          type: "review",
+          requiredDecisions: 1,
+          participants: [{ principalType: "user", principalId: "reviewer-1", role: "reviewer" }],
+        },
+        {
+          key: "approval",
+          type: "approval",
+          requiredDecisions: 1,
+          participants: [{ principalType: "user", principalId: "reviewer-1", role: "approver" }],
+        },
+      ],
+    }, { actorType: "user", actorId: "reviewer-1" });
+    const [workflowState] = await svc.listSubjectWorkflows(companyId, "issue", issueId) ?? [];
+    const reviewStage = workflowState!.stages.find((stage) => stage.stageKey === "review")!;
+    const [initialItem] = await db
+      .select()
+      .from(notificationInboxItems)
+      .where(eq(notificationInboxItems.subjectId, reviewStage.id));
+
+    await svc.decideStage(reviewStage.id, { decision: "approved", note: null }, {
+      actorType: "user",
+      actorId: "reviewer-1",
+    });
+    const allItems = await db.select().from(notificationInboxItems);
+    const handledInitial = allItems.find((item) => item.id === initialItem.id);
+    const approvalItem = allItems.find((item) => item.subjectId !== reviewStage.id);
+    const notificationCreatedActivities = await db
+      .select()
+      .from(activityLog)
+      .where(eq(activityLog.action, "notification.created"));
+
+    expect(initialItem).toMatchObject({
+      companyId,
+      recipientType: "user",
+      recipientId: "reviewer-1",
+      status: "unread",
+      requiresAction: true,
+    });
+    expect(handledInitial).toMatchObject({ status: "handled" });
+    expect(approvalItem).toMatchObject({
+      companyId,
+      recipientType: "user",
+      recipientId: "reviewer-1",
+      status: "unread",
+      requiresAction: true,
+    });
+    expect(notificationCreatedActivities).toHaveLength(2);
   });
 });

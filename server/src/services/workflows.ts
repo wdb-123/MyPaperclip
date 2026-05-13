@@ -1,11 +1,13 @@
 import { and, asc, eq, inArray } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
 import {
+  activityLog,
   agents,
   approvals,
   companyMemberships,
   issueApprovals,
   issues,
+  notificationInboxItems,
   positionAssignments,
   positions,
   workflowInstances,
@@ -22,9 +24,6 @@ type ActorInput = {
 };
 
 export function workflowService(db: Db) {
-  // TODO(workflow-governance): Approval stages must create or link approvals
-  // and derive stage progress from approval status instead of treating
-  // workflowParticipants.decision as the source of truth.
   async function assertSubjectInCompany(subjectType: string, subjectId: string, companyId: string) {
     if (subjectType === "issue") {
       const [row] = await db
@@ -89,6 +88,80 @@ export function workflowService(db: Db) {
       .where(eq(workflowStageInstances.id, stageId))
       .limit(1);
     return row ?? null;
+  }
+
+  function workflowStageParticipantSourceKey(stageId: string, participantId: string) {
+    return `workflow_stage:${stageId}:participant:${participantId}`;
+  }
+
+  async function createInboxItemsForStage(tx: any, input: {
+    companyId: string;
+    workflowInstanceId: string;
+    stageId: string;
+    stageKey: string;
+    stageType: string;
+    subjectType: string;
+    subjectId: string;
+    actor: ActorInput;
+  }) {
+    const participants = await tx
+      .select({
+        id: workflowParticipants.id,
+        principalType: workflowParticipants.principalType,
+        principalId: workflowParticipants.principalId,
+        role: workflowParticipants.role,
+      })
+      .from(workflowParticipants)
+      .where(eq(workflowParticipants.stageInstanceId, input.stageId)) as Array<{
+        id: string;
+        principalType: string;
+        principalId: string;
+        role: string;
+      }>;
+    if (participants.length === 0) return [];
+
+    const now = new Date();
+    const items = await tx
+      .insert(notificationInboxItems)
+      .values(participants.map((participant) => ({
+        companyId: input.companyId,
+        recipientType: participant.principalType,
+        recipientId: participant.principalId,
+        subjectType: "workflow_stage_instance",
+        subjectId: input.stageId,
+        sourceKey: workflowStageParticipantSourceKey(input.stageId, participant.id),
+        actionKey: `workflow.${input.stageType}.${participant.role}`,
+        title: `Workflow stage ready: ${input.stageKey}`,
+        body: `${input.subjectType} ${input.subjectId} is waiting on ${participant.role} action.`,
+        status: "unread",
+        requiresAction: true,
+        deliveryChannels: [],
+        updatedAt: now,
+      })))
+      .onConflictDoNothing()
+      .returning() as Array<typeof notificationInboxItems.$inferSelect>;
+
+    if (items.length > 0) {
+      await tx.insert(activityLog).values(items.map((item) => ({
+        companyId: input.companyId,
+        actorType: input.actor.actorType,
+        actorId: input.actor.actorId,
+        agentId: input.actor.agentId ?? null,
+        action: "notification.created",
+        entityType: "notification_inbox_item",
+        entityId: item.id,
+        details: {
+          source: "workflow",
+          workflowInstanceId: input.workflowInstanceId,
+          workflowStageId: input.stageId,
+          recipientType: item.recipientType,
+          recipientId: item.recipientId,
+          actionKey: item.actionKey,
+        },
+      })));
+    }
+
+    return items;
   }
 
   return {
@@ -187,6 +260,19 @@ export function workflowService(db: Db) {
             principalId: participant.principalId,
             role: participant.role ?? (stage.type === "approval" ? "approver" : "reviewer"),
           })));
+
+          if (index === 0) {
+            await createInboxItemsForStage(tx, {
+              companyId,
+              workflowInstanceId: instance.id,
+              stageId: createdStage.id,
+              stageKey: createdStage.stageKey,
+              stageType: createdStage.stageType,
+              subjectType: "issue",
+              subjectId: issueId,
+              actor,
+            });
+          }
         }
 
         return instance;
@@ -282,6 +368,15 @@ export function workflowService(db: Db) {
           .update(workflowParticipants)
           .set({ decision: input.decision, decisionNote: input.note ?? null, decidedAt: now, updatedAt: now })
           .where(inArray(workflowParticipants.id, participantIds));
+        await tx
+          .update(notificationInboxItems)
+          .set({ status: "handled", readAt: now, handledAt: now, updatedAt: now })
+          .where(and(
+            eq(notificationInboxItems.companyId, row.stage.companyId),
+            inArray(notificationInboxItems.sourceKey, participantIds.map((participantId) =>
+              workflowStageParticipantSourceKey(stageId, participantId),
+            )),
+          ));
 
         if (input.decision === "revision_requested") {
           if (row.stage.approvalId) {
@@ -388,6 +483,16 @@ export function workflowService(db: Db) {
           .update(workflowInstances)
           .set({ currentStageKey: nextStage.stageKey, updatedAt: now })
           .where(and(eq(workflowInstances.id, row.instance.id), eq(workflowInstances.status, "active")));
+        await createInboxItemsForStage(tx, {
+          companyId: row.stage.companyId,
+          workflowInstanceId: row.instance.id,
+          stageId: nextStage.id,
+          stageKey: nextStage.stageKey,
+          stageType: nextStage.stageType,
+          subjectType: row.instance.subjectType,
+          subjectId: row.instance.subjectId,
+          actor,
+        });
         return { row: { stage, instance: row.instance }, advanced: { completed: false, nextStage, current: stage } };
       });
     },
