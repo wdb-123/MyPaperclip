@@ -349,6 +349,33 @@ export function OrgChart() {
     [departments],
   );
 
+  const departmentMap = useMemo(() => {
+    const m = new Map<string, Department>();
+    for (const department of activeDepartments) m.set(department.id, department);
+    return m;
+  }, [activeDepartments]);
+
+  const activePositionAssignments = useMemo(
+    () => (positionAssignments ?? []).filter((assignment) => assignment.status === "active"),
+    [positionAssignments],
+  );
+
+  const occupiedPositionIds = useMemo(() => {
+    const ids = new Set<string>();
+    for (const assignment of activePositionAssignments) ids.add(assignment.positionId);
+    return ids;
+  }, [activePositionAssignments]);
+
+  const openPositions = useMemo(
+    () => activePositions.filter((position) => !occupiedPositionIds.has(position.id)),
+    [activePositions, occupiedPositionIds],
+  );
+
+  const reportTargetPositions = useMemo(() => {
+    if (!positionDepartmentId) return [];
+    return activePositions.filter((position) => position.departmentId === positionDepartmentId);
+  }, [activePositions, positionDepartmentId]);
+
   const activeAgents = useMemo(
     () => (agents ?? []).filter((agent) => agent.status !== "terminated" && agent.status !== "pending_approval"),
     [agents],
@@ -390,7 +417,7 @@ export function OrgChart() {
     mutationFn: () =>
       organizationApi.createPosition(selectedCompanyId!, {
         name: positionName.trim(),
-        departmentId: positionDepartmentId || null,
+        departmentId: positionDepartmentId,
         reportsToPositionId: positionReportsToId || null,
       }),
     onSuccess: async () => {
@@ -434,6 +461,36 @@ export function OrgChart() {
   useEffect(() => {
     setBreadcrumbs([{ label: t("组织图", "Org Chart") }]);
   }, [setBreadcrumbs, t]);
+
+  useEffect(() => {
+    if (departmentParentId && !departmentMap.has(departmentParentId)) {
+      setDepartmentParentId("");
+    }
+  }, [departmentMap, departmentParentId]);
+
+  useEffect(() => {
+    if (!positionDepartmentId && activeDepartments.length > 0) {
+      setPositionDepartmentId(activeDepartments[0].id);
+    }
+    if (positionDepartmentId && !departmentMap.has(positionDepartmentId)) {
+      setPositionDepartmentId(activeDepartments[0]?.id ?? "");
+      setPositionReportsToId("");
+    }
+  }, [activeDepartments, departmentMap, positionDepartmentId]);
+
+  useEffect(() => {
+    if (!positionReportsToId) return;
+    const target = activePositions.find((position) => position.id === positionReportsToId);
+    if (!target || target.departmentId !== positionDepartmentId) {
+      setPositionReportsToId("");
+    }
+  }, [activePositions, positionDepartmentId, positionReportsToId]);
+
+  useEffect(() => {
+    if (assignmentPositionId && !openPositions.some((position) => position.id === assignmentPositionId)) {
+      setAssignmentPositionId("");
+    }
+  }, [assignmentPositionId, openPositions]);
 
   const chartRoots = useMemo(() => {
     if (activePositions.length > 0) {
@@ -742,11 +799,14 @@ export function OrgChart() {
               value={departmentParentId}
               onChange={(event) => setDepartmentParentId(event.target.value)}
             >
-              <option value="">{t("无上级部门", "No parent department")}</option>
+              <option value="">{t("公司直属（一级部门）", "Company-level department")}</option>
               {activeDepartments.map((department) => (
                 <option key={department.id} value={department.id}>{department.name}</option>
               ))}
             </select>
+            <div className="text-xs leading-5 text-muted-foreground">
+              {t("上级部门只用于创建子部门；一级部门直接挂在公司下。", "Parent department is only for child departments; top-level departments report to the company.")}
+            </div>
             <Button
               type="submit"
               size="sm"
@@ -761,7 +821,7 @@ export function OrgChart() {
           className="rounded-md border border-border bg-card p-3"
           onSubmit={(event) => {
             event.preventDefault();
-            if (!positionName.trim() || createPositionMutation.isPending) return;
+            if (!positionName.trim() || !positionDepartmentId || createPositionMutation.isPending) return;
             createPositionMutation.mutate();
           }}
         >
@@ -777,8 +837,9 @@ export function OrgChart() {
               className="h-8 rounded-md border border-input bg-background px-2 text-sm outline-none focus:border-ring"
               value={positionDepartmentId}
               onChange={(event) => setPositionDepartmentId(event.target.value)}
+              disabled={activeDepartments.length === 0}
             >
-              <option value="">{t("不归属部门", "No department")}</option>
+              <option value="">{t("先选择部门", "Select a department first")}</option>
               {activeDepartments.map((department) => (
                 <option key={department.id} value={department.id}>{department.name}</option>
               ))}
@@ -787,16 +848,22 @@ export function OrgChart() {
               className="h-8 rounded-md border border-input bg-background px-2 text-sm outline-none focus:border-ring"
               value={positionReportsToId}
               onChange={(event) => setPositionReportsToId(event.target.value)}
+              disabled={!positionDepartmentId}
             >
-              <option value="">{t("无上级岗位", "No manager position")}</option>
-              {activePositions.map((position) => (
+              <option value="">{t("部门负责人（顶层岗位）", "Department lead / top role")}</option>
+              {reportTargetPositions.map((position) => (
                 <option key={position.id} value={position.id}>{position.name}</option>
               ))}
             </select>
+            <div className="text-xs leading-5 text-muted-foreground">
+              {activeDepartments.length === 0
+                ? t("先创建部门，再在部门内创建岗位。", "Create a department before adding positions.")
+                : t("岗位必须归属部门；汇报对象只从同部门岗位里选择。", "Positions must belong to a department; reporting targets are limited to the same department.")}
+            </div>
             <Button
               type="submit"
               size="sm"
-              disabled={!positionName.trim() || createPositionMutation.isPending}
+              disabled={!positionName.trim() || !positionDepartmentId || createPositionMutation.isPending}
             >
               {createPositionMutation.isPending ? t("正在创建...", "Creating...") : t("创建岗位", "Create Position")}
             </Button>
@@ -817,10 +884,16 @@ export function OrgChart() {
               className="h-8 rounded-md border border-input bg-background px-2 text-sm outline-none focus:border-ring"
               value={assignmentPositionId}
               onChange={(event) => setAssignmentPositionId(event.target.value)}
+              disabled={openPositions.length === 0}
             >
               <option value="">{t("选择岗位", "Select position")}</option>
-              {activePositions.map((position) => (
-                <option key={position.id} value={position.id}>{position.name}</option>
+              {openPositions.map((position) => (
+                <option key={position.id} value={position.id}>
+                  {position.name}
+                  {position.departmentId && departmentMap.has(position.departmentId)
+                    ? ` · ${departmentMap.get(position.departmentId)?.name}`
+                    : ""}
+                </option>
               ))}
             </select>
             <select
@@ -850,6 +923,11 @@ export function OrgChart() {
                   </option>
                 ))}
             </select>
+            <div className="text-xs leading-5 text-muted-foreground">
+              {openPositions.length === 0
+                ? t("没有空缺岗位；先创建岗位或结束现有任职。", "No open positions; create a position or end an active assignment first.")
+                : t("任职是把一个空缺岗位交给用户或 Agent，不改变部门层级。", "Assignment fills an open position with a user or agent; it does not change department hierarchy.")}
+            </div>
             <Button
               type="submit"
               size="sm"
