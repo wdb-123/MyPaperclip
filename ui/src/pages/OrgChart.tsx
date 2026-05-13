@@ -288,6 +288,9 @@ export function OrgChart() {
   const [positionDraftDepartmentId, setPositionDraftDepartmentId] = useState<string | null>(null);
   const [positionDraftName, setPositionDraftName] = useState("");
   const [positionDraftReportsToId, setPositionDraftReportsToId] = useState("");
+  const [assignmentDraftPositionId, setAssignmentDraftPositionId] = useState<string | null>(null);
+  const [assignmentDraftPrincipalType, setAssignmentDraftPrincipalType] = useState<"user" | "agent">("user");
+  const [assignmentDraftPrincipalId, setAssignmentDraftPrincipalId] = useState("");
   const departmentNameInputRef = useRef<HTMLInputElement>(null);
 
   const { data: orgTree, isLoading } = useQuery({
@@ -339,6 +342,16 @@ export function OrgChart() {
     }
     return m;
   }, [userDirectory]);
+
+  const activeUsers = useMemo(
+    () => (userDirectory?.users ?? []).filter((entry) => entry.status === "active"),
+    [userDirectory],
+  );
+
+  const activeAgents = useMemo(
+    () => (agents ?? []).filter((agent) => agent.status !== "terminated" && agent.status !== "pending_approval"),
+    [agents],
+  );
 
   const activePositions = useMemo(
     () => (positions ?? []).filter((position) => position.status === "active"),
@@ -405,6 +418,12 @@ export function OrgChart() {
     setPositionDraftDepartmentId(departmentId);
     setPositionDraftName("");
     setPositionDraftReportsToId("");
+  }, []);
+
+  const startAssignmentDraft = useCallback((positionId: string) => {
+    setAssignmentDraftPositionId(positionId);
+    setAssignmentDraftPrincipalType("user");
+    setAssignmentDraftPrincipalId("");
   }, []);
 
   const getDepartmentLineageIds = useCallback((departmentId: string) => {
@@ -489,6 +508,28 @@ export function OrgChart() {
     },
   });
 
+  const createAssignmentMutation = useMutation({
+    mutationFn: (input: { positionId: string; principalType: "user" | "agent"; principalId: string }) =>
+      organizationApi.createPositionAssignment(selectedCompanyId!, {
+        positionId: input.positionId,
+        principalType: input.principalType,
+        principalId: input.principalId,
+      }),
+    onSuccess: async () => {
+      setAssignmentDraftPositionId(null);
+      setAssignmentDraftPrincipalId("");
+      await invalidateOrganization();
+      pushToast({ title: t("任职已创建", "Assignment created"), tone: "success" });
+    },
+    onError: (error) => {
+      pushToast({
+        title: t("创建任职失败", "Failed to create assignment"),
+        body: error instanceof Error ? error.message : t("未知错误", "Unknown error"),
+        tone: "error",
+      });
+    },
+  });
+
   useEffect(() => {
     setBreadcrumbs([{ label: t("组织图", "Org Chart") }]);
   }, [setBreadcrumbs, t]);
@@ -522,6 +563,13 @@ export function OrgChart() {
       setPositionDraftReportsToId("");
     }
   }, [getReportTargetPositions, positionDraftDepartmentId, positionDraftReportsToId]);
+
+  useEffect(() => {
+    if (assignmentDraftPositionId && !positionMap.has(assignmentDraftPositionId)) {
+      setAssignmentDraftPositionId(null);
+      setAssignmentDraftPrincipalId("");
+    }
+  }, [assignmentDraftPositionId, positionMap]);
 
   const chartRoots = useMemo(() => {
     if (activePositions.length > 0) {
@@ -909,26 +957,122 @@ export function OrgChart() {
                   {departmentPositions.length === 0 ? (
                     <div className="text-xs text-muted-foreground">{t("暂无岗位，点击“添加岗位”创建。", "No positions yet. Click Add position to create one.")}</div>
                   ) : (
-                    <div className="flex flex-wrap gap-1">
+                    <div className="grid gap-2">
                       {departmentPositions.map((position) => {
-                        const assignmentCount = (positionAssignments ?? []).filter(
+                        const assignments = (positionAssignments ?? []).filter(
                           (assignment) => assignment.positionId === position.id && assignment.status === "active",
-                        ).length;
+                        );
                         const reportsTo = position.reportsToPositionId ? positionMap.get(position.reportsToPositionId) : null;
                         return (
-                          <span key={position.id} className="grid rounded border border-border bg-background px-2 py-1 text-xs">
-                            <span>
-                              {position.name}
-                              <span className="ml-1 text-muted-foreground">
-                                {assignmentCount > 0 ? t("已任职", "Filled") : t("空缺", "Open")}
+                          <div key={position.id} className="grid gap-2 rounded border border-border bg-background px-2 py-2 text-xs">
+                            <div className="flex items-start justify-between gap-2">
+                              <div className="min-w-0">
+                                <div className="font-medium">{position.name}</div>
+                                <div className="text-muted-foreground">
+                                  {reportsTo
+                                    ? `${t("汇报给", "Reports to")}: ${formatPositionWithDepartment(reportsTo)}`
+                                    : t("顶层岗位", "Top role")}
+                                </div>
+                              </div>
+                              <span className="shrink-0 rounded border border-border px-1.5 py-0.5 text-[10px] text-muted-foreground">
+                                {assignments.length > 0 ? t("已任职", "Filled") : t("空缺", "Open")}
                               </span>
-                            </span>
-                            <span className="text-muted-foreground">
-                              {reportsTo
-                                ? `${t("汇报给", "Reports to")}: ${formatPositionWithDepartment(reportsTo)}`
-                                : t("顶层岗位", "Top role")}
-                            </span>
-                          </span>
+                            </div>
+                            <div className="flex flex-wrap items-center gap-1">
+                              <span className="text-muted-foreground">{t("任职者", "Occupant")}:</span>
+                              {assignments.length === 0 ? (
+                                <span className="text-muted-foreground">{t("未分配", "Unassigned")}</span>
+                              ) : assignments.map((assignment) => (
+                                <span key={assignment.id} className="rounded bg-muted px-1.5 py-0.5">
+                                  {assignment.principalType === "agent"
+                                    ? agentMap.get(assignment.principalId)?.name ?? assignment.principalId
+                                    : userMap.get(assignment.principalId) ?? assignment.principalId}
+                                </span>
+                              ))}
+                            </div>
+                            <div className="flex justify-end">
+                              <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                onClick={() => startAssignmentDraft(position.id)}
+                              >
+                                {assignments.length === 0 ? t("分配账号", "Assign account") : t("追加任职", "Add occupant")}
+                              </Button>
+                            </div>
+                            {assignmentDraftPositionId === position.id ? (
+                              <form
+                                className="grid gap-2 rounded-md border border-border bg-muted/30 p-2"
+                                onSubmit={(event) => {
+                                  event.preventDefault();
+                                  if (!assignmentDraftPrincipalId || !assignmentDraftPositionId || createAssignmentMutation.isPending) return;
+                                  createAssignmentMutation.mutate({
+                                    positionId: assignmentDraftPositionId,
+                                    principalType: assignmentDraftPrincipalType,
+                                    principalId: assignmentDraftPrincipalId,
+                                  });
+                                }}
+                              >
+                                <label className="grid gap-1 text-xs font-medium text-muted-foreground">
+                                  <span>{t("任职对象类型", "Occupant type")}</span>
+                                  <select
+                                    className="h-8 rounded-md border border-input bg-background px-2 text-sm outline-none focus:border-ring"
+                                    value={assignmentDraftPrincipalType}
+                                    onChange={(event) => {
+                                      setAssignmentDraftPrincipalType(event.target.value as "user" | "agent");
+                                      setAssignmentDraftPrincipalId("");
+                                    }}
+                                  >
+                                    <option value="user">{t("用户账号", "User account")}</option>
+                                    <option value="agent">{t("Agent", "Agent")}</option>
+                                  </select>
+                                </label>
+                                <label className="grid gap-1 text-xs font-medium text-muted-foreground">
+                                  <span>{t("选择任职者", "Select occupant")}</span>
+                                  <select
+                                    className="h-8 rounded-md border border-input bg-background px-2 text-sm outline-none focus:border-ring"
+                                    value={assignmentDraftPrincipalId}
+                                    onChange={(event) => setAssignmentDraftPrincipalId(event.target.value)}
+                                  >
+                                    <option value="">
+                                      {assignmentDraftPrincipalType === "user"
+                                        ? t("选择用户账号", "Select user account")
+                                        : t("选择 Agent", "Select agent")}
+                                    </option>
+                                    {assignmentDraftPrincipalType === "user"
+                                      ? activeUsers.map((entry) => (
+                                        <option key={entry.principalId} value={entry.principalId}>
+                                          {entry.user?.name || entry.user?.email || entry.principalId}
+                                        </option>
+                                      ))
+                                      : activeAgents.map((agent) => (
+                                        <option key={agent.id} value={agent.id}>{agent.name}</option>
+                                      ))}
+                                  </select>
+                                </label>
+                                <div className="flex justify-end gap-2">
+                                  <Button
+                                    type="button"
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => {
+                                      setAssignmentDraftPositionId(null);
+                                      setAssignmentDraftPrincipalId("");
+                                    }}
+                                  >
+                                    {t("取消", "Cancel")}
+                                  </Button>
+                                  <Button
+                                    type="submit"
+                                    size="sm"
+                                    disabled={!assignmentDraftPrincipalId || createAssignmentMutation.isPending}
+                                  >
+                                    {createAssignmentMutation.isPending ? t("正在分配...", "Assigning...") : t("确认分配", "Assign")}
+                                  </Button>
+                                </div>
+                              </form>
+                            ) : null}
+                          </div>
                         );
                       })}
                     </div>
