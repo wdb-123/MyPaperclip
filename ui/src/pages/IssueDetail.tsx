@@ -73,6 +73,7 @@ import { IssueRelatedWorkPanel } from "../components/IssueRelatedWorkPanel";
 import { IssueMonitorActivityCard } from "../components/IssueMonitorActivityCard";
 import { IssueProperties } from "../components/IssueProperties";
 import { IssueRunLedger } from "../components/IssueRunLedger";
+import { IssueWorkflowPanel } from "../components/IssueWorkflowPanel";
 import { IssueWorkspaceCard } from "../components/IssueWorkspaceCard";
 import type { MentionOption } from "../components/MarkdownEditor";
 import { ImageGalleryModal } from "../components/ImageGalleryModal";
@@ -1448,6 +1449,11 @@ export function IssueDetail() {
     for (const a of agents ?? []) map.set(a.id, a);
     return map;
   }, [agents]);
+  const agentNameMap = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const a of agents ?? []) map.set(a.id, a.name);
+    return map;
+  }, [agents]);
   const userProfileMap = useMemo(
     () => buildCompanyUserProfileMap(companyMembers?.users),
     [companyMembers?.users],
@@ -2555,22 +2561,35 @@ export function IssueDetail() {
       return;
     }
     openPanel(
-      <IssueProperties
-        issue={panelIssue}
-        childIssues={panelChildIssues}
-        onAddSubIssue={openNewSubIssue}
-        onUpdate={handleIssuePropertiesUpdate}
-      />
+      <div className="space-y-5">
+        <IssueProperties
+          issue={panelIssue}
+          childIssues={panelChildIssues}
+          onAddSubIssue={openNewSubIssue}
+          onUpdate={handleIssuePropertiesUpdate}
+        />
+        <IssueWorkflowPanel
+          issueId={panelIssue.id}
+          companyId={panelIssue.companyId}
+          currentUserId={currentUserId}
+          userLabelMap={userLabelMap}
+          agentNameMap={agentNameMap}
+          compact
+        />
+      </div>
     );
     return () => closePanel();
   }, [
+    agentNameMap,
     closePanel,
+    currentUserId,
     handleIssuePropertiesUpdate,
     issuePanelKey,
     openNewSubIssue,
     openPanel,
     panelChildIssues,
     panelIssue,
+    userLabelMap,
   ]);
 
   const goToInboxShortcutArmedRef = useRef(false);
@@ -4016,6 +4035,16 @@ export function IssueDetail() {
                 onUpdate={(data) => updateIssue.mutate(data)}
                 inline
               />
+              <div className="mt-5">
+                <IssueWorkflowPanel
+                  issueId={issue.id}
+                  companyId={issue.companyId}
+                  currentUserId={currentUserId}
+                  userLabelMap={userLabelMap}
+                  agentNameMap={agentNameMap}
+                  compact
+                />
+              </div>
             </div>
           </ScrollArea>
         </SheetContent>

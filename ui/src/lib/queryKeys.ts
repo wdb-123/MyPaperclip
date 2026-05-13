@@ -152,6 +152,9 @@ export const queryKeys = {
   inboxDismissals: (companyId: string) => ["inbox-dismissals", companyId] as const,
   notificationInbox: (companyId: string, status?: string) =>
     ["notification-inbox", companyId, status ?? "__all__"] as const,
+  workflows: {
+    issue: (companyId: string, issueId: string) => ["workflows", companyId, "issue", issueId] as const,
+  },
   activity: (companyId: string) => ["activity", companyId] as const,
   costs: (companyId: string, from?: string, to?: string) =>
     ["costs", companyId, from, to] as const,

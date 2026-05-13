@@ -1676,10 +1676,14 @@ export function issueService(db: Db) {
   }
 
   async function getIssueByIdentifier(identifier: string) {
+    const normalizedIdentifier = identifier.toUpperCase();
     const row = await db
       .select()
       .from(issues)
-      .where(eq(issues.identifier, identifier.toUpperCase()))
+      // Exact identifier lookup should not depend on the optional pg_trgm
+      // extension; some embedded/local Postgres builds cannot load it even
+      // when older migrations created trigram indexes.
+      .where(sql`${issues.identifier} || '' = ${normalizedIdentifier}`)
       .then((rows) => rows[0] ?? null);
     if (!row) return null;
     const [enriched] = await withIssueLabels(db, [row]);
