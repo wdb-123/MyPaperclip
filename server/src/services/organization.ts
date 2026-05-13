@@ -16,6 +16,8 @@ type CreatePositionAssignmentInput = typeof positionAssignments.$inferInsert;
 type UpdatePositionAssignmentInput = Partial<Omit<CreatePositionAssignmentInput, "id" | "companyId" | "positionId" | "principalType" | "principalId" | "createdAt">>;
 
 export function organizationService(db: Db) {
+  // TODO(org-governance): Enforce acyclic department and position trees before
+  // accepting parentDepartmentId or reportsToPositionId changes.
   async function assertDepartmentInCompany(companyId: string, departmentId: string | null | undefined) {
     if (!departmentId) return;
     const [row] = await db
@@ -148,6 +150,8 @@ export function organizationService(db: Db) {
     },
 
     async createPositionAssignment(companyId: string, input: Omit<CreatePositionAssignmentInput, "companyId">) {
+      // TODO(org-governance): Reject active assignments for archived positions
+      // and auto-fill endedAt when status transitions to ended.
       if (!(await assertPositionInCompany(companyId, input.positionId))) return null;
       if (!(await assertPrincipalInCompany(companyId, input.principalType, input.principalId))) return null;
       const [row] = await db.insert(positionAssignments).values({ ...input, companyId }).returning();

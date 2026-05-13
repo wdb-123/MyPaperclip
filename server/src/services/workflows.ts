@@ -20,6 +20,9 @@ type ActorInput = {
 };
 
 export function workflowService(db: Db) {
+  // TODO(workflow-governance): Approval stages must create or link approvals
+  // and derive stage progress from approval status instead of treating
+  // workflowParticipants.decision as the source of truth.
   async function assertSubjectInCompany(subjectType: string, subjectId: string, companyId: string) {
     if (subjectType === "issue") {
       const [row] = await db
@@ -91,8 +94,6 @@ export function workflowService(db: Db) {
         );
       for (const position of occupiedPositions) {
         principalIds.add(position.positionId);
-      }
-      if (occupiedPositions.length > 0) {
       }
     }
 
@@ -240,6 +241,9 @@ export function workflowService(db: Db) {
     },
 
     async decideStage(stageId: string, input: WorkflowDecisionInput, actor: ActorInput) {
+      // TODO(workflow-governance): Move this method into a transaction and
+      // use conditional updates on the current in_progress stage so concurrent
+      // approvals cannot advance the workflow more than once.
       const row = await getStageWithInstance(stageId);
       if (!row) return null;
       if (row.stage.status !== "in_progress") return { error: "stage_not_in_progress" as const, row };
@@ -253,6 +257,8 @@ export function workflowService(db: Db) {
         .where(inArray(workflowParticipants.id, participantIds));
 
       if (input.decision === "revision_requested") {
+        // TODO(workflow-governance): Define whether revision_requested returns
+        // the issue to execution, reopens an approval, or starts a prior stage.
         return { row, advanced: null };
       }
 

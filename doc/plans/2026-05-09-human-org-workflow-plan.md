@@ -46,11 +46,27 @@ The main missing piece is a first-class human organization and workflow layer.
 - Do not require enterprise RBAC before the first usable slice.
 - Do not make every deployment SaaS multi-tenant. This plan is about company-internal organization workflow.
 
+## Governance Boundaries
+
+This work must extend the existing Paperclip control plane instead of creating parallel systems.
+
+Company remains the hard boundary for every object in this plan. Departments, positions, position assignments, workflow templates, workflow instances, workflow stages, workflow participants, approvals, notifications, and activity entries must never cross company boundaries.
+
+Issues keep the existing single-assignee model. Selecting a position for issue assignment is a routing convenience only: the server must eventually resolve that selection to exactly one `assignee_user_id` or one `assignee_agent_id`. A position must not become a second worker identity on an issue.
+
+Positions represent responsibilities or seats in the organization. They are not execution principals. Work is still executed by a concrete user or agent occupying a position, and the assignment state must remain inspectable through `position_assignments`.
+
+Approvals remain the authoritative governance object. Workflow stages may coordinate review and approval order, but workflow must not become a second approval system. A workflow `approval` stage must create or link an existing `approvals.id`; approval decisions must be written to `approvals.status`, with `workflow_participants.decision` used only as a participant record or snapshot.
+
+Workflow is an issue-attached stage pipeline. It may sequence assignment, review, approval, and notification stages, but core side effects must land in existing systems: issue status and assignment fields, approvals, activity log, notifications, and heartbeat wakeups.
+
+UI may expose departments, positions, and workflow stages, but UI-only interpretation is not sufficient for durable behavior. API clients, agents, and plugins must be able to use the same server-side assignment and approval semantics.
+
 ## Core Concepts
 
 ### Department
 
-A company-scoped organizational unit.
+A company-scoped organizational grouping. Departments affect organization management, visibility, and presentation; they do not execute work and they do not replace companies as the security boundary.
 
 Suggested table: `departments`
 
@@ -70,7 +86,7 @@ Indexes:
 
 ### Position
 
-A role inside a department. One human or agent can occupy a position, and one person can hold multiple positions if allowed.
+A responsibility node inside a department. A position can be occupied by a user or an agent through `position_assignments`, but it is not itself a worker. Issue assignment by position must resolve to the current occupant before writing the issue assignee fields.
 
 Suggested table: `positions`
 
@@ -149,7 +165,7 @@ The `definition` should contain ordered stages:
 
 ### Workflow Instance
 
-The live workflow for a specific issue or approval.
+The live stage pipeline attached to a specific issue or approval. Workflow instance state tracks orchestration progress only; it does not replace approval records, issue state, notifications, or activity logging.
 
 Suggested table: `workflow_instances`
 
@@ -191,6 +207,8 @@ Suggested table: `workflow_stage_instances`
 ### Workflow Participant
 
 The people or agents responsible for a stage.
+
+Participant decisions are stage-local records. For approval stages, the authoritative decision must live on the linked `approvals` record, and participant rows should be treated as attribution/snapshot data.
 
 Suggested table: `workflow_participants`
 
@@ -247,13 +265,15 @@ Add optional links:
 - `position_id`
 - `workflow_instance_id`
 
-The assignee stays either `assignee_user_id` or `assignee_agent_id`. Department and position provide routing and governance context.
+The assignee stays either `assignee_user_id` or `assignee_agent_id`. Department and position provide routing and governance context. A position selection must be resolved server-side before issue creation or update is committed.
 
 ### Approvals
 
 Keep the existing `approvals` table for approval records.
 
 Workflow stages can create or link existing approvals. This avoids duplicating approval logic while enabling multi-step chains.
+
+Approval stages must not complete purely by updating `workflow_participants.decision`. The `approvals` row remains the source of truth for pending, approved, rejected, revision-requested, and cancelled states. Sidebar badges, notifications, activity, and wakeup logic should continue to observe the existing approval path.
 
 ### Permissions
 
@@ -388,6 +408,13 @@ Initial API slice landed:
 - `POST /api/issues/:issueId/workflows?companyId=...` starts an issue workflow.
 - `GET /api/issues/:issueId/workflows?companyId=...` reads workflow state with stages and participants.
 - `POST /api/workflow-stages/:stageId/decisions` records participant decisions and advances or completes the workflow.
+
+Governance follow-up required before UI expansion:
+
+- Put `decideStage()` in a transaction with conditional updates for the current `in_progress` stage.
+- Define `revision_requested` as a stage, issue, and approval transition, not only a participant decision.
+- Link workflow `approval` stages to `approvals` and advance workflow from approval state changes.
+- Move position assignment resolution into a server-side helper used by issue create/update routes.
 
 ### Phase 3: Inbox And Feishu Routing
 
