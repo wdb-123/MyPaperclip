@@ -8,6 +8,7 @@ import { authApi } from "../api/auth";
 import { dashboardApi } from "../api/dashboard";
 import { heartbeatsApi } from "../api/heartbeats";
 import { issuesApi } from "../api/issues";
+import { notificationInboxApi } from "../api/notificationInbox";
 import { queryKeys } from "../lib/queryKeys";
 import {
   buildInboxDismissedAtByKey,
@@ -195,6 +196,12 @@ export function useInboxBadge(companyId: string | null | undefined) {
     enabled: !!companyId,
   });
 
+  const { data: workflowActions = [] } = useQuery({
+    queryKey: queryKeys.notificationInbox(companyId!, "unread"),
+    queryFn: () => notificationInboxApi.list(companyId!, { status: "unread" }),
+    enabled: !!companyId,
+  });
+
   return useMemo(
     () =>
       computeInboxBadgeData({
@@ -202,11 +209,12 @@ export function useInboxBadge(companyId: string | null | undefined) {
         joinRequests,
         dashboard,
         heartbeatRuns,
+        workflowActions,
         mineIssues,
         dismissedAlerts,
         dismissedAtByKey,
         currentUserId,
       }),
-    [approvals, joinRequests, dashboard, heartbeatRuns, mineIssues, dismissedAlerts, dismissedAtByKey, currentUserId],
+    [approvals, joinRequests, dashboard, heartbeatRuns, workflowActions, mineIssues, dismissedAlerts, dismissedAtByKey, currentUserId],
   );
 }

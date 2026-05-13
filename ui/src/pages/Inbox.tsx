@@ -9,6 +9,7 @@ import { ApiError } from "../api/client";
 import { dashboardApi } from "../api/dashboard";
 import { executionWorkspacesApi } from "../api/execution-workspaces";
 import { issuesApi } from "../api/issues";
+import { notificationInboxApi, type NotificationInboxItem } from "../api/notificationInbox";
 import { agentsApi } from "../api/agents";
 import { heartbeatsApi } from "../api/heartbeats";
 import { instanceSettingsApi } from "../api/instanceSettings";
@@ -91,6 +92,7 @@ import {
   UserPlus,
   Search,
   ListTree,
+  Workflow,
 } from "lucide-react";
 
 const INBOX_HEARTBEAT_RUN_LIMIT = 200;
@@ -649,6 +651,101 @@ function JoinRequestInboxRow({
   );
 }
 
+function workflowActionRecipientLabel(item: NotificationInboxItem, agentById: ReadonlyMap<string, string>) {
+  if (item.recipientType === "agent") return agentById.get(item.recipientId) ?? item.recipientId.slice(0, 8);
+  if (item.recipientType === "position") return `Position ${item.recipientId.slice(0, 8)}`;
+  return item.recipientId === "local-board" ? "Board" : item.recipientId;
+}
+
+function WorkflowActionInboxRow({
+  item,
+  recipientLabel,
+  onMarkRead,
+  onHandle,
+  isPending,
+  selected = false,
+  className,
+}: {
+  item: NotificationInboxItem;
+  recipientLabel: string;
+  onMarkRead: () => void;
+  onHandle: () => void;
+  isPending: boolean;
+  selected?: boolean;
+  className?: string;
+}) {
+  const isUnread = item.status === "unread";
+  return (
+    <div className={cn(
+      "group border-b border-border px-2 py-2.5 last:border-b-0 sm:px-1 sm:pr-3 sm:py-2",
+      className,
+    )}>
+      <div className="flex items-start gap-2 sm:items-center">
+        <span className="hidden sm:inline-flex h-4 w-4 shrink-0 items-center justify-center self-center">
+          {isUnread ? (
+            <button
+              type="button"
+              onClick={onMarkRead}
+              className="inline-flex h-4 w-4 items-center justify-center rounded-full transition-colors hover:bg-blue-500/20"
+              aria-label="Mark as read"
+            >
+              <span className="block h-2 w-2 rounded-full bg-blue-600 dark:bg-blue-400" />
+            </button>
+          ) : (
+            <span className="inline-flex h-4 w-4" aria-hidden="true" />
+          )}
+        </span>
+        <div className={cn(
+          "flex min-w-0 flex-1 items-start gap-2 transition-colors",
+          selected ? "hover:bg-transparent" : "hover:bg-accent/50",
+        )}>
+          <span className="hidden h-3.5 w-3.5 shrink-0 sm:inline-flex" aria-hidden="true" />
+          <span className="mt-0.5 shrink-0 rounded-md bg-muted p-1.5 sm:mt-0">
+            <Workflow className="h-4 w-4 text-muted-foreground" />
+          </span>
+          <span className="min-w-0 flex-1">
+            <span className="line-clamp-2 text-sm font-medium sm:truncate sm:line-clamp-none">
+              {item.title}
+            </span>
+            <span className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
+              <span>{recipientLabel}</span>
+              <span>{item.actionKey.replaceAll("_", " ")}</span>
+              {item.body ? <span className="truncate max-w-[360px]">{item.body}</span> : null}
+              <span>{timeAgo(item.updatedAt)}</span>
+            </span>
+          </span>
+        </div>
+        <div className="hidden shrink-0 items-center gap-2 sm:flex">
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="h-8 shrink-0 px-2.5"
+            onClick={onHandle}
+            disabled={isPending}
+          >
+            <Check className="mr-1.5 h-3.5 w-3.5" />
+            {isPending ? "Handling..." : "Mark handled"}
+          </Button>
+        </div>
+      </div>
+      <div className="mt-3 flex gap-2 sm:hidden">
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          className="h-8 shrink-0 px-2.5"
+          onClick={onHandle}
+          disabled={isPending}
+        >
+          <Check className="mr-1.5 h-3.5 w-3.5" />
+          {isPending ? "Handling..." : "Mark handled"}
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 export function Inbox() {
   const { selectedCompanyId } = useCompany();
   const { setBreadcrumbs } = useBreadcrumbs();
@@ -818,6 +915,15 @@ export function Inbox() {
   const { data: heartbeatRuns, isLoading: isRunsLoading } = useQuery({
     queryKey: [...queryKeys.heartbeats(selectedCompanyId!), "limit", INBOX_HEARTBEAT_RUN_LIMIT],
     queryFn: () => heartbeatsApi.list(selectedCompanyId!, undefined, INBOX_HEARTBEAT_RUN_LIMIT),
+    enabled: !!selectedCompanyId,
+  });
+
+  const {
+    data: notificationInboxItems = [],
+    isLoading: isNotificationInboxLoading,
+  } = useQuery({
+    queryKey: queryKeys.notificationInbox(selectedCompanyId!),
+    queryFn: () => notificationInboxApi.list(selectedCompanyId!),
     enabled: !!selectedCompanyId,
   });
 
@@ -1033,6 +1139,8 @@ export function Inbox() {
     allCategoryFilter === "everything" || allCategoryFilter === "issues_i_touched";
   const showApprovalsCategory =
     allCategoryFilter === "everything" || allCategoryFilter === "approvals";
+  const showWorkflowActionsCategory =
+    allCategoryFilter === "everything" || allCategoryFilter === "workflow_actions";
   const showFailedRunsCategory =
     allCategoryFilter === "everything" || allCategoryFilter === "failed_runs";
   const showAlertsCategory = allCategoryFilter === "everything" || allCategoryFilter === "alerts";
@@ -1051,6 +1159,16 @@ export function Inbox() {
     return joinRequests;
   }, [joinRequests, tab, showJoinRequestsCategory, dismissedAtByKey]);
 
+  const workflowActionsForTab = useMemo(() => {
+    if (tab === "all" && !showWorkflowActionsCategory) return [];
+    return notificationInboxItems.filter((item) => {
+      if (!item.requiresAction) return false;
+      if (item.status === "handled" || item.status === "dismissed") return false;
+      if (tab === "unread") return item.status === "unread";
+      return true;
+    });
+  }, [notificationInboxItems, showWorkflowActionsCategory, tab]);
+
   const workItemsToRender = useMemo(
     () =>
       getInboxWorkItems({
@@ -1058,8 +1176,18 @@ export function Inbox() {
         approvals: tab === "all" && !showApprovalsCategory ? [] : approvalsToRender,
         failedRuns: failedRunsForTab,
         joinRequests: joinRequestsForTab,
+        workflowActions: workflowActionsForTab,
       }),
-    [approvalsToRender, issuesToRender, showApprovalsCategory, showTouchedCategory, tab, failedRunsForTab, joinRequestsForTab],
+    [
+      approvalsToRender,
+      issuesToRender,
+      showApprovalsCategory,
+      showTouchedCategory,
+      tab,
+      failedRunsForTab,
+      joinRequestsForTab,
+      workflowActionsForTab,
+    ],
   );
 
   const filteredWorkItems = useMemo(() => {
@@ -1099,6 +1227,14 @@ export function Inbox() {
         const jr = item.joinRequest;
         if (jr.agentName?.toLowerCase().includes(q)) return true;
         if (jr.capabilities?.toLowerCase().includes(q)) return true;
+        return false;
+      }
+      if (item.kind === "workflow_action") {
+        const notification = item.notification;
+        if (notification.title.toLowerCase().includes(q)) return true;
+        if (notification.body?.toLowerCase().includes(q)) return true;
+        if (notification.actionKey.toLowerCase().includes(q)) return true;
+        if (notification.recipientId.toLowerCase().includes(q)) return true;
         return false;
       }
       return false;
@@ -1565,6 +1701,30 @@ export function Inbox() {
     },
   });
 
+  const markWorkflowActionReadMutation = useMutation({
+    mutationFn: (itemId: string) => notificationInboxApi.markRead(selectedCompanyId!, itemId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.notificationInbox(selectedCompanyId!) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.notificationInbox(selectedCompanyId!, "unread") });
+      queryClient.invalidateQueries({ queryKey: queryKeys.sidebarBadges(selectedCompanyId!) });
+    },
+    onError: (err) => {
+      setActionError(err instanceof Error ? err.message : "Failed to mark workflow action read");
+    },
+  });
+
+  const handleWorkflowActionMutation = useMutation({
+    mutationFn: (itemId: string) => notificationInboxApi.markHandled(selectedCompanyId!, itemId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.notificationInbox(selectedCompanyId!) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.notificationInbox(selectedCompanyId!, "unread") });
+      queryClient.invalidateQueries({ queryKey: queryKeys.sidebarBadges(selectedCompanyId!) });
+    },
+    onError: (err) => {
+      setActionError(err instanceof Error ? err.message : "Failed to handle workflow action");
+    },
+  });
+
   const handleMarkNonIssueRead = useCallback((key: string) => {
     setFadingNonIssueItems((prev) => new Set(prev).add(key));
     markItemRead(key);
@@ -1873,7 +2033,8 @@ export function Inbox() {
     !isIssuesLoading &&
     !isMineIssuesLoading &&
     !isTouchedIssuesLoading &&
-    !isRunsLoading;
+    !isRunsLoading &&
+    !isNotificationInboxLoading;
 
   const showSeparatorBefore = (key: SectionKey) => visibleSections.indexOf(key) > 0;
   const markAllReadIssues = (tab === "mine" ? visibleMineIssues : unreadTouchedIssues)
@@ -2085,6 +2246,7 @@ export function Inbox() {
               <SelectItem value="issues_i_touched">我最近参与的任务</SelectItem>
               <SelectItem value="join_requests">加入请求</SelectItem>
               <SelectItem value="approvals">审批</SelectItem>
+              <SelectItem value="workflow_actions">Workflow 行动项</SelectItem>
               <SelectItem value="failed_runs">失败运行</SelectItem>
               <SelectItem value="alerts">提醒</SelectItem>
             </SelectContent>
@@ -2407,6 +2569,25 @@ export function Inbox() {
                           {row}
                         </SwipeToArchive>
                       ) : row));
+                      continue;
+                    }
+
+                    if (item.kind === "workflow_action") {
+                      const notificationKey = `notification:${item.notification.id}`;
+                      const isHandling = handleWorkflowActionMutation.isPending;
+                      const row = (
+                        <WorkflowActionInboxRow
+                          key={notificationKey}
+                          item={item.notification}
+                          selected={isSelected}
+                          recipientLabel={workflowActionRecipientLabel(item.notification, agentById)}
+                          onMarkRead={() => markWorkflowActionReadMutation.mutate(item.notification.id)}
+                          onHandle={() => handleWorkflowActionMutation.mutate(item.notification.id)}
+                          isPending={isHandling}
+                          className="transition-all duration-200 ease-out"
+                        />
+                      );
+                      elements.push(wrapItem(notificationKey, isSelected, row));
                       continue;
                     }
 

@@ -6,6 +6,7 @@ import type {
   Issue,
   JoinRequest,
 } from "@paperclipai/shared";
+import type { NotificationInboxItem } from "../api/notificationInbox";
 import {
   applyIssueFilters,
   defaultIssueFilterState,
@@ -31,6 +32,7 @@ export type InboxCategoryFilter =
   | "issues_i_touched"
   | "join_requests"
   | "approvals"
+  | "workflow_actions"
   | "failed_runs"
   | "alerts";
 export type InboxApprovalFilter = "all" | "actionable" | "resolved";
@@ -72,6 +74,11 @@ export type InboxWorkItem =
       kind: "join_request";
       timestamp: number;
       joinRequest: JoinRequest;
+    }
+  | {
+      kind: "workflow_action";
+      timestamp: number;
+      notification: NotificationInboxItem;
     };
 
 export interface InboxBadgeData {
@@ -79,6 +86,7 @@ export interface InboxBadgeData {
   approvals: number;
   failedRuns: number;
   joinRequests: number;
+  workflowActions: number;
   mineIssues: number;
   alerts: number;
 }
@@ -154,6 +162,7 @@ function normalizeInboxCategoryFilter(value: unknown): InboxCategoryFilter {
   return value === "issues_i_touched"
     || value === "join_requests"
     || value === "approvals"
+    || value === "workflow_actions"
     || value === "failed_runs"
     || value === "alerts"
     ? value
@@ -754,11 +763,13 @@ export function getInboxWorkItems({
   approvals,
   failedRuns = [],
   joinRequests = [],
+  workflowActions = [],
 }: {
   issues: Issue[];
   approvals: Approval[];
   failedRuns?: HeartbeatRun[];
   joinRequests?: JoinRequest[];
+  workflowActions?: NotificationInboxItem[];
 }): InboxWorkItem[] {
   return [
     ...issues.map((issue) => ({
@@ -781,6 +792,11 @@ export function getInboxWorkItems({
       timestamp: normalizeTimestamp(joinRequest.createdAt),
       joinRequest,
     })),
+    ...workflowActions.map((notification) => ({
+      kind: "workflow_action" as const,
+      timestamp: normalizeTimestamp(notification.updatedAt),
+      notification,
+    })),
   ].sort((a, b) => {
     const timestampDiff = b.timestamp - a.timestamp;
     if (timestampDiff !== 0) return timestampDiff;
@@ -799,6 +815,7 @@ export function getInboxWorkItems({
 const inboxWorkItemKindOrder: InboxWorkItem["kind"][] = [
   "issue",
   "approval",
+  "workflow_action",
   "failed_run",
   "join_request",
 ];
@@ -806,6 +823,7 @@ const inboxWorkItemKindOrder: InboxWorkItem["kind"][] = [
 const inboxWorkItemKindLabels: Record<InboxWorkItem["kind"], string> = {
   issue: "Issues",
   approval: "Approvals",
+  workflow_action: "Workflow actions",
   failed_run: "Failed runs",
   join_request: "Join requests",
 };
@@ -1039,6 +1057,7 @@ export function getInboxWorkItemKey(item: InboxWorkItem): string {
   if (item.kind === "issue") return `issue:${item.issue.id}`;
   if (item.kind === "approval") return `approval:${item.approval.id}`;
   if (item.kind === "failed_run") return `run:${item.run.id}`;
+  if (item.kind === "workflow_action") return `notification:${item.notification.id}`;
   return `join:${item.joinRequest.id}`;
 }
 
@@ -1120,6 +1139,7 @@ export function computeInboxBadgeData({
   joinRequests,
   dashboard,
   heartbeatRuns,
+  workflowActions = [],
   mineIssues,
   dismissedAlerts,
   dismissedAtByKey,
@@ -1129,6 +1149,7 @@ export function computeInboxBadgeData({
   joinRequests: JoinRequest[];
   dashboard: DashboardSummary | undefined;
   heartbeatRuns: HeartbeatRun[];
+  workflowActions?: NotificationInboxItem[];
   mineIssues: Issue[];
   dismissedAlerts: Set<string>;
   dismissedAtByKey: ReadonlyMap<string, number>;
@@ -1147,6 +1168,7 @@ export function computeInboxBadgeData({
     (jr) => !isInboxEntityDismissed(dismissedAtByKey, `join:${jr.id}`, jr.updatedAt ?? jr.createdAt),
   ).length;
   const visibleMineIssues = mineIssues.filter((issue) => issue.isUnreadForMe).length;
+  const visibleWorkflowActions = workflowActions.filter((item) => item.status === "unread").length;
   const agentErrorCount = dashboard?.agents.error ?? 0;
   const monthBudgetCents = dashboard?.costs.monthBudgetCents ?? 0;
   const monthUtilizationPercent = dashboard?.costs.monthUtilizationPercent ?? 0;
@@ -1162,10 +1184,11 @@ export function computeInboxBadgeData({
 
   return {
     // The inbox badge reflects personal/actionable work, not company-wide health alerts.
-    inbox: actionableApprovals + visibleJoinRequests + failedRuns + visibleMineIssues,
+    inbox: actionableApprovals + visibleJoinRequests + failedRuns + visibleMineIssues + visibleWorkflowActions,
     approvals: actionableApprovals,
     failedRuns,
     joinRequests: visibleJoinRequests,
+    workflowActions: visibleWorkflowActions,
     mineIssues: visibleMineIssues,
     alerts,
   };

@@ -10,6 +10,7 @@ import type {
   JoinRequest,
   ProjectWorkspace,
 } from "@paperclipai/shared";
+import type { NotificationInboxItem } from "../api/notificationInbox";
 import {
   DEFAULT_INBOX_ISSUE_COLUMNS,
   buildGroupedInboxSections,
@@ -173,6 +174,29 @@ function makeRun(id: string, status: HeartbeatRun["status"], createdAt: string, 
   };
 }
 
+function makeNotification(id: string, status: NotificationInboxItem["status"] = "unread"): NotificationInboxItem {
+  return {
+    id,
+    companyId: "company-1",
+    recipientType: "user",
+    recipientId: "user-1",
+    subjectType: "workflow_stage_instance",
+    subjectId: "stage-1",
+    sourceKey: `workflow_stage:stage-1:participant:${id}`,
+    actionKey: "workflow.review.reviewer",
+    title: `Workflow action ${id}`,
+    body: "Issue is waiting for review.",
+    status,
+    requiresAction: true,
+    deliveryChannels: [],
+    deliveredAt: null,
+    readAt: null,
+    handledAt: null,
+    createdAt: "2026-03-11T00:00:00.000Z",
+    updatedAt: "2026-03-11T03:30:00.000Z",
+  };
+}
+
 function makeIssue(id: string, isUnreadForMe: boolean): Issue {
   return {
     id,
@@ -332,6 +356,7 @@ describe("inbox helpers", () => {
       approvals: 1,
       failedRuns: 2,
       joinRequests: 1,
+      workflowActions: 0,
       mineIssues: 1,
       alerts: 1,
     });
@@ -354,6 +379,7 @@ describe("inbox helpers", () => {
       approvals: 0,
       failedRuns: 0,
       joinRequests: 0,
+      workflowActions: 0,
       mineIssues: 0,
       alerts: 0,
     });
@@ -365,6 +391,7 @@ describe("inbox helpers", () => {
       joinRequests: [],
       dashboard,
       heartbeatRuns: [],
+      workflowActions: [makeNotification("workflow-1"), makeNotification("workflow-2", "read")],
       mineIssues: [makeIssue("1", false), makeIssue("2", false), makeIssue("3", true)],
       dismissedAlerts: new Set<string>(),
       dismissedAtByKey: new Map(),
@@ -372,7 +399,8 @@ describe("inbox helpers", () => {
     });
 
     expect(result.mineIssues).toBe(1);
-    expect(result.inbox).toBe(1);
+    expect(result.workflowActions).toBe(1);
+    expect(result.inbox).toBe(2);
     expect(result.alerts).toBe(2);
   });
 
@@ -511,10 +539,11 @@ describe("inbox helpers", () => {
         issues: [olderIssue, newerIssue],
         approvals: [approval],
       }).map((item) => {
-        if (item.kind === "issue") return `issue:${item.issue.id}`;
-        if (item.kind === "approval") return `approval:${item.approval.id}`;
-        if (item.kind === "join_request") return `join:${item.joinRequest.id}`;
-        return `run:${item.run.id}`;
+	        if (item.kind === "issue") return `issue:${item.issue.id}`;
+	        if (item.kind === "approval") return `approval:${item.approval.id}`;
+	        if (item.kind === "join_request") return `join:${item.joinRequest.id}`;
+	        if (item.kind === "workflow_action") return `notification:${item.notification.id}`;
+	        return `run:${item.run.id}`;
       }),
     ).toEqual([
       "issue:1",
@@ -554,14 +583,39 @@ describe("inbox helpers", () => {
         approvals: [approval],
         joinRequests: [joinRequest],
       }).map((item) => {
-        if (item.kind === "issue") return `issue:${item.issue.id}`;
-        if (item.kind === "approval") return `approval:${item.approval.id}`;
-        if (item.kind === "join_request") return `join:${item.joinRequest.id}`;
-        return `run:${item.run.id}`;
+	        if (item.kind === "issue") return `issue:${item.issue.id}`;
+	        if (item.kind === "approval") return `approval:${item.approval.id}`;
+	        if (item.kind === "join_request") return `join:${item.joinRequest.id}`;
+	        if (item.kind === "workflow_action") return `notification:${item.notification.id}`;
+	        return `run:${item.run.id}`;
       }),
     ).toEqual([
       "issue:1",
       "join:join-1",
+      "approval:approval-oldest",
+    ]);
+  });
+
+  it("mixes workflow actions into the inbox feed by most recent activity", () => {
+    const issue = makeIssue("1", true);
+    issue.lastActivityAt = new Date("2026-03-11T04:00:00.000Z");
+    const notification = makeNotification("notification-1");
+    notification.updatedAt = "2026-03-11T03:30:00.000Z";
+    const approval = makeApprovalWithTimestamps(
+      "approval-oldest",
+      "pending",
+      "2026-03-11T02:00:00.000Z",
+    );
+
+    expect(
+      getInboxWorkItems({
+        issues: [issue],
+        approvals: [approval],
+        workflowActions: [notification],
+      }).map((item) => getInboxWorkItemKey(item)),
+    ).toEqual([
+      "issue:1",
+      "notification:notification-1",
       "approval:approval-oldest",
     ]);
   });
