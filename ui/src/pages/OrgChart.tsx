@@ -1,11 +1,13 @@
 import { useEffect, useRef, useState, useMemo, useCallback } from "react";
 import { Link, useNavigate } from "@/lib/router";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { agentsApi, type OrgNode } from "../api/agents";
 import { organizationApi } from "../api/organization";
+import { accessApi } from "../api/access";
 import { useCompany } from "../context/CompanyContext";
 import { useBreadcrumbs } from "../context/BreadcrumbContext";
 import { useLanguage } from "../context/LanguageContext";
+import { useToast } from "../context/ToastContext";
 import { queryKeys } from "../lib/queryKeys";
 import { agentUrl } from "../lib/utils";
 import { Button } from "@/components/ui/button";
@@ -176,7 +178,17 @@ export function OrgChart() {
   const { selectedCompanyId } = useCompany();
   const { setBreadcrumbs } = useBreadcrumbs();
   const { t } = useLanguage();
+  const { pushToast } = useToast();
+  const queryClient = useQueryClient();
   const navigate = useNavigate();
+  const [departmentName, setDepartmentName] = useState("");
+  const [departmentParentId, setDepartmentParentId] = useState("");
+  const [positionName, setPositionName] = useState("");
+  const [positionDepartmentId, setPositionDepartmentId] = useState("");
+  const [positionReportsToId, setPositionReportsToId] = useState("");
+  const [assignmentPositionId, setAssignmentPositionId] = useState("");
+  const [assignmentPrincipalType, setAssignmentPrincipalType] = useState<"user" | "agent">("agent");
+  const [assignmentPrincipalId, setAssignmentPrincipalId] = useState("");
 
   const { data: orgTree, isLoading } = useQuery({
     queryKey: queryKeys.org(selectedCompanyId!),
@@ -208,11 +220,117 @@ export function OrgChart() {
     enabled: !!selectedCompanyId,
   });
 
+  const { data: userDirectory } = useQuery({
+    queryKey: queryKeys.access.companyUserDirectory(selectedCompanyId!),
+    queryFn: () => accessApi.listUserDirectory(selectedCompanyId!),
+    enabled: !!selectedCompanyId,
+  });
+
   const agentMap = useMemo(() => {
     const m = new Map<string, Agent>();
     for (const a of agents ?? []) m.set(a.id, a);
     return m;
   }, [agents]);
+
+  const userMap = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const entry of userDirectory?.users ?? []) {
+      m.set(entry.principalId, entry.user?.name || entry.user?.email || entry.principalId);
+    }
+    return m;
+  }, [userDirectory]);
+
+  const activePositions = useMemo(
+    () => (positions ?? []).filter((position) => position.status === "active"),
+    [positions],
+  );
+
+  const activeDepartments = useMemo(
+    () => (departments ?? []).filter((department) => department.status === "active"),
+    [departments],
+  );
+
+  const activeAgents = useMemo(
+    () => (agents ?? []).filter((agent) => agent.status !== "terminated" && agent.status !== "pending_approval"),
+    [agents],
+  );
+
+  const activeUsers = userDirectory?.users ?? [];
+
+  const invalidateOrganization = useCallback(async () => {
+    if (!selectedCompanyId) return;
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: queryKeys.organization.departments(selectedCompanyId) }),
+      queryClient.invalidateQueries({ queryKey: queryKeys.organization.positions(selectedCompanyId) }),
+      queryClient.invalidateQueries({ queryKey: queryKeys.organization.positionAssignments(selectedCompanyId) }),
+    ]);
+  }, [queryClient, selectedCompanyId]);
+
+  const createDepartmentMutation = useMutation({
+    mutationFn: () =>
+      organizationApi.createDepartment(selectedCompanyId!, {
+        name: departmentName.trim(),
+        parentDepartmentId: departmentParentId || null,
+      }),
+    onSuccess: async () => {
+      setDepartmentName("");
+      setDepartmentParentId("");
+      await invalidateOrganization();
+      pushToast({ title: t("部门已创建", "Department created"), tone: "success" });
+    },
+    onError: (error) => {
+      pushToast({
+        title: t("创建部门失败", "Failed to create department"),
+        body: error instanceof Error ? error.message : t("未知错误", "Unknown error"),
+        tone: "error",
+      });
+    },
+  });
+
+  const createPositionMutation = useMutation({
+    mutationFn: () =>
+      organizationApi.createPosition(selectedCompanyId!, {
+        name: positionName.trim(),
+        departmentId: positionDepartmentId || null,
+        reportsToPositionId: positionReportsToId || null,
+      }),
+    onSuccess: async () => {
+      setPositionName("");
+      setPositionDepartmentId("");
+      setPositionReportsToId("");
+      await invalidateOrganization();
+      pushToast({ title: t("岗位已创建", "Position created"), tone: "success" });
+    },
+    onError: (error) => {
+      pushToast({
+        title: t("创建岗位失败", "Failed to create position"),
+        body: error instanceof Error ? error.message : t("未知错误", "Unknown error"),
+        tone: "error",
+      });
+    },
+  });
+
+  const createAssignmentMutation = useMutation({
+    mutationFn: () =>
+      organizationApi.createPositionAssignment(selectedCompanyId!, {
+        positionId: assignmentPositionId,
+        principalType: assignmentPrincipalType,
+        principalId: assignmentPrincipalId,
+      }),
+    onSuccess: async () => {
+      setAssignmentPositionId("");
+      setAssignmentPrincipalId("");
+      await invalidateOrganization();
+      pushToast({ title: t("任职已创建", "Assignment created"), tone: "success" });
+    },
+    onError: (error) => {
+      pushToast({
+        title: t("创建任职失败", "Failed to create assignment"),
+        body: error instanceof Error ? error.message : t("未知错误", "Unknown error"),
+        tone: "error",
+      });
+    },
+  });
 
   useEffect(() => {
     setBreadcrumbs([{ label: t("组织图", "Org Chart") }]);
@@ -489,6 +607,184 @@ export function OrgChart() {
           </Button>
         </Link>
       </div>
+      <div className="mb-3 grid shrink-0 gap-2 lg:grid-cols-3">
+        <form
+          className="rounded-md border border-border bg-card p-3"
+          onSubmit={(event) => {
+            event.preventDefault();
+            if (!departmentName.trim() || createDepartmentMutation.isPending) return;
+            createDepartmentMutation.mutate();
+          }}
+        >
+          <div className="mb-2 text-sm font-medium">{t("创建部门", "Create Department")}</div>
+          <div className="grid gap-2">
+            <input
+              className="h-8 rounded-md border border-input bg-background px-2 text-sm outline-none focus:border-ring"
+              value={departmentName}
+              onChange={(event) => setDepartmentName(event.target.value)}
+              placeholder={t("部门名称", "Department name")}
+            />
+            <select
+              className="h-8 rounded-md border border-input bg-background px-2 text-sm outline-none focus:border-ring"
+              value={departmentParentId}
+              onChange={(event) => setDepartmentParentId(event.target.value)}
+            >
+              <option value="">{t("无上级部门", "No parent department")}</option>
+              {activeDepartments.map((department) => (
+                <option key={department.id} value={department.id}>{department.name}</option>
+              ))}
+            </select>
+            <Button
+              type="submit"
+              size="sm"
+              disabled={!departmentName.trim() || createDepartmentMutation.isPending}
+            >
+              {createDepartmentMutation.isPending ? t("正在创建...", "Creating...") : t("创建部门", "Create Department")}
+            </Button>
+          </div>
+        </form>
+
+        <form
+          className="rounded-md border border-border bg-card p-3"
+          onSubmit={(event) => {
+            event.preventDefault();
+            if (!positionName.trim() || createPositionMutation.isPending) return;
+            createPositionMutation.mutate();
+          }}
+        >
+          <div className="mb-2 text-sm font-medium">{t("创建岗位", "Create Position")}</div>
+          <div className="grid gap-2">
+            <input
+              className="h-8 rounded-md border border-input bg-background px-2 text-sm outline-none focus:border-ring"
+              value={positionName}
+              onChange={(event) => setPositionName(event.target.value)}
+              placeholder={t("岗位名称", "Position name")}
+            />
+            <select
+              className="h-8 rounded-md border border-input bg-background px-2 text-sm outline-none focus:border-ring"
+              value={positionDepartmentId}
+              onChange={(event) => setPositionDepartmentId(event.target.value)}
+            >
+              <option value="">{t("不归属部门", "No department")}</option>
+              {activeDepartments.map((department) => (
+                <option key={department.id} value={department.id}>{department.name}</option>
+              ))}
+            </select>
+            <select
+              className="h-8 rounded-md border border-input bg-background px-2 text-sm outline-none focus:border-ring"
+              value={positionReportsToId}
+              onChange={(event) => setPositionReportsToId(event.target.value)}
+            >
+              <option value="">{t("无上级岗位", "No manager position")}</option>
+              {activePositions.map((position) => (
+                <option key={position.id} value={position.id}>{position.name}</option>
+              ))}
+            </select>
+            <Button
+              type="submit"
+              size="sm"
+              disabled={!positionName.trim() || createPositionMutation.isPending}
+            >
+              {createPositionMutation.isPending ? t("正在创建...", "Creating...") : t("创建岗位", "Create Position")}
+            </Button>
+          </div>
+        </form>
+
+        <form
+          className="rounded-md border border-border bg-card p-3"
+          onSubmit={(event) => {
+            event.preventDefault();
+            if (!assignmentPositionId || !assignmentPrincipalId || createAssignmentMutation.isPending) return;
+            createAssignmentMutation.mutate();
+          }}
+        >
+          <div className="mb-2 text-sm font-medium">{t("分配岗位", "Assign Position")}</div>
+          <div className="grid gap-2">
+            <select
+              className="h-8 rounded-md border border-input bg-background px-2 text-sm outline-none focus:border-ring"
+              value={assignmentPositionId}
+              onChange={(event) => setAssignmentPositionId(event.target.value)}
+            >
+              <option value="">{t("选择岗位", "Select position")}</option>
+              {activePositions.map((position) => (
+                <option key={position.id} value={position.id}>{position.name}</option>
+              ))}
+            </select>
+            <select
+              className="h-8 rounded-md border border-input bg-background px-2 text-sm outline-none focus:border-ring"
+              value={assignmentPrincipalType}
+              onChange={(event) => {
+                setAssignmentPrincipalType(event.target.value as "user" | "agent");
+                setAssignmentPrincipalId("");
+              }}
+            >
+              <option value="agent">{t("代理", "Agent")}</option>
+              <option value="user">{t("用户", "User")}</option>
+            </select>
+            <select
+              className="h-8 rounded-md border border-input bg-background px-2 text-sm outline-none focus:border-ring"
+              value={assignmentPrincipalId}
+              onChange={(event) => setAssignmentPrincipalId(event.target.value)}
+            >
+              <option value="">{assignmentPrincipalType === "agent" ? t("选择代理", "Select agent") : t("选择用户", "Select user")}</option>
+              {assignmentPrincipalType === "agent"
+                ? activeAgents.map((agent) => (
+                  <option key={agent.id} value={agent.id}>{agent.name}</option>
+                ))
+                : activeUsers.map((entry) => (
+                  <option key={entry.principalId} value={entry.principalId}>
+                    {entry.user?.name || entry.user?.email || entry.principalId}
+                  </option>
+                ))}
+            </select>
+            <Button
+              type="submit"
+              size="sm"
+              disabled={!assignmentPositionId || !assignmentPrincipalId || createAssignmentMutation.isPending}
+            >
+              {createAssignmentMutation.isPending ? t("正在分配...", "Assigning...") : t("分配岗位", "Assign Position")}
+            </Button>
+          </div>
+        </form>
+      </div>
+      {activePositions.length > 0 ? (
+        <div className="mb-3 grid shrink-0 gap-2 md:grid-cols-2 xl:grid-cols-3">
+          {activePositions.slice(0, 6).map((position) => {
+            const assignments = (positionAssignments ?? []).filter(
+              (assignment) => assignment.positionId === position.id && assignment.status === "active",
+            );
+            const department = position.departmentId
+              ? departments?.find((item) => item.id === position.departmentId)
+              : null;
+            return (
+              <div key={position.id} className="rounded-md border border-border bg-card px-3 py-2">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="min-w-0">
+                    <div className="truncate text-sm font-medium">{position.name}</div>
+                    <div className="truncate text-xs text-muted-foreground">
+                      {department?.name ?? t("未归属部门", "No department")}
+                    </div>
+                  </div>
+                  <span className="shrink-0 rounded border border-border px-1.5 py-0.5 text-[10px] text-muted-foreground">
+                    {assignments.length}
+                  </span>
+                </div>
+                <div className="mt-2 flex flex-wrap gap-1">
+                  {assignments.length === 0 ? (
+                    <span className="text-xs text-muted-foreground">{t("暂无任职", "No assignments")}</span>
+                  ) : assignments.map((assignment) => (
+                    <span key={assignment.id} className="rounded bg-muted px-1.5 py-0.5 text-xs">
+                      {assignment.principalType === "agent"
+                        ? agentMap.get(assignment.principalId)?.name ?? assignment.principalId
+                        : userMap.get(assignment.principalId) ?? assignment.principalId}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      ) : null}
       <div
         ref={containerRef}
         data-testid="org-chart-viewport"
