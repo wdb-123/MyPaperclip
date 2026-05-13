@@ -1,0 +1,2 @@
+ALTER TABLE "workflow_stage_instances" ADD COLUMN "approval_id" uuid;--> statement-breakpoint
+ALTER TABLE "workflow_stage_instances" ADD CONSTRAINT "workflow_stage_instances_approval_id_approvals_id_fk" FOREIGN KEY ("approval_id") REFERENCES "public"."approvals"("id") ON DELETE set null ON UPDATE no action;

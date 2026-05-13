@@ -1,9 +1,12 @@
 import { randomUUID } from "node:crypto";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
+import { eq } from "drizzle-orm";
 import {
   companies,
   companyMemberships,
   createDb,
+  approvals,
+  issueApprovals,
   issues,
   workflowInstances,
   workflowParticipants,
@@ -42,6 +45,8 @@ describeEmbeddedPostgres("workflowService governance invariants", () => {
     await db.delete(workflowStageInstances);
     await db.delete(workflowInstances);
     await db.delete(workflowTemplates);
+    await db.delete(issueApprovals);
+    await db.delete(approvals);
     await db.delete(issues);
     await db.delete(companyMemberships);
     await db.delete(companies);
@@ -137,5 +142,52 @@ describeEmbeddedPostgres("workflowService governance invariants", () => {
     expect(afterReview?.currentStageKey).toBe("approval");
     expect(afterReview?.stages.find((stage) => stage.stageKey === "review")?.status).toBe("approved");
     expect(afterReview?.stages.find((stage) => stage.stageKey === "approval")?.status).toBe("in_progress");
+  });
+
+  it("creates and resolves authoritative approvals for approval stages", async () => {
+    const { companyId, issueId } = await seedIssue();
+    const workflow = await svc.startIssueWorkflow(companyId, issueId, {
+      triggerKind: "manual",
+      stages: [{
+        key: "approval",
+        type: "approval",
+        requiredDecisions: 1,
+        participants: [{ principalType: "user", principalId: "reviewer-1", role: "approver" }],
+      }],
+    }, { actorType: "user", actorId: "reviewer-1" });
+    const [workflowState] = await svc.listSubjectWorkflows(companyId, "issue", issueId) ?? [];
+    const approvalStage = workflowState!.stages[0]!;
+    const [createdApproval] = await db
+      .select()
+      .from(approvals)
+      .where(eq(approvals.id, approvalStage.approvalId!));
+    const [link] = await db
+      .select()
+      .from(issueApprovals)
+      .where(eq(issueApprovals.approvalId, approvalStage.approvalId!));
+
+    const decision = await svc.decideStage(approvalStage.id, { decision: "approved", note: "ship it" }, {
+      actorType: "user",
+      actorId: "reviewer-1",
+    });
+    const [resolvedApproval] = await db
+      .select()
+      .from(approvals)
+      .where(eq(approvals.id, approvalStage.approvalId!));
+
+    expect(workflow).not.toBeNull();
+    expect(approvalStage.approvalId).toBeTruthy();
+    expect(createdApproval).toMatchObject({
+      companyId,
+      type: "request_board_approval",
+      status: "pending",
+    });
+    expect(link).toMatchObject({ issueId, approvalId: approvalStage.approvalId });
+    expect(decision && "advanced" in decision ? decision.advanced?.completed : false).toBe(true);
+    expect(resolvedApproval).toMatchObject({
+      status: "approved",
+      decisionNote: "ship it",
+      decidedByUserId: "reviewer-1",
+    });
   });
 });

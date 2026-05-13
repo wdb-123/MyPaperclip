@@ -94,6 +94,28 @@ export function workflowRoutes(db: Db) {
         completed: result.advanced?.completed ?? false,
       },
     });
+    if (result.row.stage.approvalId) {
+      const action = req.body.decision === "approved"
+        ? "approval.approved"
+        : req.body.decision === "rejected"
+          ? "approval.rejected"
+          : "approval.revision_requested";
+      await logActivity(db, {
+        companyId: row.stage.companyId,
+        actorType: actor.actorType,
+        actorId: actor.actorId,
+        agentId: actor.agentId,
+        action,
+        entityType: "approval",
+        entityId: result.row.stage.approvalId,
+        details: {
+          source: "workflow",
+          workflowInstanceId: row.instance.id,
+          workflowStageId: stageId,
+          decision: req.body.decision,
+        },
+      });
+    }
     res.json(result);
   });
 

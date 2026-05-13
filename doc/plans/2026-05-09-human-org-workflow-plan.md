@@ -413,7 +413,7 @@ Governance follow-up required before UI expansion:
 
 - `decideStage()` now runs in a transaction with conditional updates for the current `in_progress` stage.
 - Define `revision_requested` as a stage, issue, and approval transition, not only a participant decision.
-- Link workflow `approval` stages to `approvals` and advance workflow from approval state changes.
+- Workflow `approval` stages now create linked `approvals` and `issue_approvals` rows; workflow decisions update `approvals.status` and emit `approval.*` activity.
 - Move position assignment resolution into a server-side helper used by issue create/update routes.
 - Workflow stages now have explicit `stage_order`; pipeline order must not depend on timestamp ordering.
 

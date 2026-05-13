@@ -1,6 +1,7 @@
 import { index, integer, jsonb, pgTable, text, timestamp, uuid } from "drizzle-orm/pg-core";
 import { companies } from "./companies.js";
 import { agents } from "./agents.js";
+import { approvals } from "./approvals.js";
 
 export const workflowTemplates = pgTable(
   "workflow_templates",
@@ -50,6 +51,7 @@ export const workflowStageInstances = pgTable(
     stageKey: text("stage_key").notNull(),
     stageType: text("stage_type").notNull(),
     stageOrder: integer("stage_order").notNull().default(0),
+    approvalId: uuid("approval_id").references(() => approvals.id, { onDelete: "set null" }),
     status: text("status").notNull().default("pending"),
     requiredDecisions: integer("required_decisions").notNull().default(1),
     dueAt: timestamp("due_at", { withTimezone: true }),

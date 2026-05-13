@@ -4,6 +4,7 @@ import {
   agents,
   approvals,
   companyMemberships,
+  issueApprovals,
   issues,
   positionAssignments,
   positions,
@@ -128,6 +129,28 @@ export function workflowService(db: Db) {
 
         for (let index = 0; index < input.stages.length; index += 1) {
           const stage = input.stages[index]!;
+          const [approval] = stage.type === "approval"
+            ? await tx
+              .insert(approvals)
+              .values({
+                companyId,
+                type: "request_board_approval",
+                requestedByUserId: actor.actorType === "user" ? actor.actorId : null,
+                requestedByAgentId: actor.actorType === "agent" ? actor.actorId : null,
+                status: "pending",
+                payload: {
+                  source: "workflow",
+                  workflowInstanceId: instance.id,
+                  issueId,
+                  stageKey: stage.key,
+                },
+                decisionNote: null,
+                decidedByUserId: null,
+                decidedAt: null,
+                updatedAt: new Date(),
+              })
+              .returning()
+            : [null];
           const [createdStage] = await tx
             .insert(workflowStageInstances)
             .values({
@@ -136,12 +159,26 @@ export function workflowService(db: Db) {
               stageKey: stage.key,
               stageType: stage.type,
               stageOrder: index,
+              approvalId: approval?.id ?? null,
               status: index === 0 ? "in_progress" : "pending",
               requiredDecisions: stage.requiredDecisions,
               dueAt: stage.dueAt ? new Date(stage.dueAt) : null,
             })
             .returning();
           if (!createdStage) throw new Error("Failed to create workflow stage");
+
+          if (approval) {
+            await tx
+              .insert(issueApprovals)
+              .values({
+                companyId,
+                issueId,
+                approvalId: approval.id,
+                linkedByAgentId: actor.actorType === "agent" ? actor.actorId : null,
+                linkedByUserId: actor.actorType === "user" ? actor.actorId : null,
+              })
+              .onConflictDoNothing();
+          }
 
           await tx.insert(workflowParticipants).values(stage.participants.map((participant) => ({
             companyId,
@@ -247,12 +284,36 @@ export function workflowService(db: Db) {
           .where(inArray(workflowParticipants.id, participantIds));
 
         if (input.decision === "revision_requested") {
+          if (row.stage.approvalId) {
+            await tx
+              .update(approvals)
+              .set({
+                status: "revision_requested",
+                decisionNote: input.note ?? null,
+                decidedByUserId: actor.actorType === "user" ? actor.actorId : null,
+                decidedAt: now,
+                updatedAt: now,
+              })
+              .where(and(eq(approvals.id, row.stage.approvalId), eq(approvals.status, "pending")));
+          }
           // TODO(workflow-governance): Define whether revision_requested returns
-          // the issue to execution, reopens an approval, or starts a prior stage.
+          // the issue to execution or starts a prior stage after approval integration.
           return { row, advanced: null };
         }
 
         if (input.decision === "rejected") {
+          if (row.stage.approvalId) {
+            await tx
+              .update(approvals)
+              .set({
+                status: "rejected",
+                decisionNote: input.note ?? null,
+                decidedByUserId: actor.actorType === "user" ? actor.actorId : null,
+                decidedAt: now,
+                updatedAt: now,
+              })
+              .where(and(eq(approvals.id, row.stage.approvalId), inArray(approvals.status, ["pending", "revision_requested"])));
+          }
           const [stage] = await tx
             .update(workflowStageInstances)
             .set({ status: "rejected", completedAt: now, updatedAt: now })
@@ -266,15 +327,30 @@ export function workflowService(db: Db) {
           return { row: { stage, instance: row.instance }, advanced: null };
         }
 
-        const approvals = await tx
+        const approvedParticipants = await tx
           .select({ id: workflowParticipants.id })
           .from(workflowParticipants)
           .where(and(
             eq(workflowParticipants.stageInstanceId, stageId),
             eq(workflowParticipants.decision, "approved"),
           ));
-        if (approvals.length < row.stage.requiredDecisions) {
+        if (approvedParticipants.length < row.stage.requiredDecisions) {
           return { row, advanced: null };
+        }
+
+        if (row.stage.approvalId) {
+          const [approval] = await tx
+            .update(approvals)
+            .set({
+              status: "approved",
+              decisionNote: input.note ?? null,
+              decidedByUserId: actor.actorType === "user" ? actor.actorId : null,
+              decidedAt: now,
+              updatedAt: now,
+            })
+            .where(and(eq(approvals.id, row.stage.approvalId), inArray(approvals.status, ["pending", "revision_requested"])))
+            .returning();
+          if (!approval) return { error: "stage_not_in_progress" as const, row };
         }
 
         const [stage] = await tx
