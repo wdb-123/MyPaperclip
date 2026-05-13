@@ -9,6 +9,10 @@ import { OrgChart } from "./OrgChart";
 const navigateMock = vi.fn();
 const orgMock = vi.fn();
 const listMock = vi.fn();
+const departmentsMock = vi.fn();
+const positionsMock = vi.fn();
+const positionAssignmentsMock = vi.fn();
+const userDirectoryMock = vi.fn();
 
 vi.mock("@/lib/router", () => ({
   Link: ({ to, children }: { to: string; children: React.ReactNode }) => <a href={to}>{children}</a>,
@@ -23,10 +27,35 @@ vi.mock("../context/BreadcrumbContext", () => ({
   useBreadcrumbs: () => ({ setBreadcrumbs: vi.fn() }),
 }));
 
+vi.mock("../context/LanguageContext", () => ({
+  useLanguage: () => ({ t: (zh: string, en: string) => zh || en }),
+}));
+
+vi.mock("../context/ToastContext", () => ({
+  useToast: () => ({ pushToast: vi.fn() }),
+}));
+
 vi.mock("../api/agents", () => ({
   agentsApi: {
     org: () => orgMock(),
     list: () => listMock(),
+  },
+}));
+
+vi.mock("../api/organization", () => ({
+  organizationApi: {
+    listDepartments: () => departmentsMock(),
+    listPositions: () => positionsMock(),
+    listPositionAssignments: () => positionAssignmentsMock(),
+    createDepartment: vi.fn(),
+    createPosition: vi.fn(),
+    createPositionAssignment: vi.fn(),
+  },
+}));
+
+vi.mock("../api/access", () => ({
+  accessApi: {
+    listUserDirectory: () => userDirectoryMock(),
   },
 }));
 
@@ -137,6 +166,10 @@ describe("OrgChart mobile gestures", () => {
     });
     orgMock.mockResolvedValue(orgTree);
     listMock.mockResolvedValue(agents);
+    departmentsMock.mockResolvedValue([]);
+    positionsMock.mockResolvedValue([]);
+    positionAssignmentsMock.mockResolvedValue([]);
+    userDirectoryMock.mockResolvedValue({ users: [] });
 
     Object.defineProperty(HTMLElement.prototype, "clientWidth", {
       configurable: true,

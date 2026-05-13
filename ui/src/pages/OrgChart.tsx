@@ -2,19 +2,19 @@ import { useEffect, useRef, useState, useMemo, useCallback } from "react";
 import { Link, useNavigate } from "@/lib/router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { agentsApi, type OrgNode } from "../api/agents";
-import { organizationApi } from "../api/organization";
+import { organizationApi, type Department, type Position, type PositionAssignment } from "../api/organization";
 import { accessApi } from "../api/access";
 import { useCompany } from "../context/CompanyContext";
 import { useBreadcrumbs } from "../context/BreadcrumbContext";
 import { useLanguage } from "../context/LanguageContext";
 import { useToast } from "../context/ToastContext";
 import { queryKeys } from "../lib/queryKeys";
-import { agentUrl } from "../lib/utils";
+import { agentUrl, cn } from "../lib/utils";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "../components/EmptyState";
 import { PageSkeleton } from "../components/PageSkeleton";
 import { AgentIcon } from "../components/AgentIconPicker";
-import { Download, Maximize2, Minus, Network, Plus, Upload, UsersRound } from "lucide-react";
+import { Download, Hexagon, Maximize2, Minus, Network, Plus, Upload, UsersRound } from "lucide-react";
 import { AGENT_ROLE_LABELS, type Agent } from "@paperclipai/shared";
 
 // Layout constants
@@ -34,9 +34,28 @@ interface LayoutNode {
   name: string;
   role: string;
   status: string;
+  kind: "agent" | "position";
+  departmentName?: string | null;
+  assignments?: Array<{
+    id: string;
+    label: string;
+    principalType: "agent" | "user";
+    agentId?: string;
+  }>;
   x: number;
   y: number;
   children: LayoutNode[];
+}
+
+interface ChartNode {
+  id: string;
+  name: string;
+  role: string;
+  status: string;
+  kind: "agent" | "position";
+  departmentName?: string | null;
+  assignments?: LayoutNode["assignments"];
+  reports: ChartNode[];
 }
 
 interface Point {
@@ -57,7 +76,7 @@ interface TouchGesture {
 // ── Layout algorithm ────────────────────────────────────────────────────
 
 /** Compute the width each subtree needs. */
-function subtreeWidth(node: OrgNode): number {
+function subtreeWidth(node: ChartNode): number {
   if (node.reports.length === 0) return CARD_W;
   const childrenW = node.reports.reduce((sum, c) => sum + subtreeWidth(c), 0);
   const gaps = (node.reports.length - 1) * GAP_X;
@@ -65,7 +84,7 @@ function subtreeWidth(node: OrgNode): number {
 }
 
 /** Recursively assign x,y positions. */
-function layoutTree(node: OrgNode, x: number, y: number): LayoutNode {
+function layoutTree(node: ChartNode, x: number, y: number): LayoutNode {
   const totalW = subtreeWidth(node);
   const layoutChildren: LayoutNode[] = [];
 
@@ -86,6 +105,9 @@ function layoutTree(node: OrgNode, x: number, y: number): LayoutNode {
     name: node.name,
     role: node.role,
     status: node.status,
+    kind: node.kind,
+    departmentName: node.departmentName,
+    assignments: node.assignments,
     x: x + (totalW - CARD_W) / 2,
     y,
     children: layoutChildren,
@@ -93,7 +115,7 @@ function layoutTree(node: OrgNode, x: number, y: number): LayoutNode {
 }
 
 /** Layout all root nodes side by side. */
-function layoutForest(roots: OrgNode[]): LayoutNode[] {
+function layoutForest(roots: ChartNode[]): LayoutNode[] {
   if (roots.length === 0) return [];
 
   const totalW = roots.reduce((sum, r) => sum + subtreeWidth(r), 0);
@@ -110,6 +132,83 @@ function layoutForest(roots: OrgNode[]): LayoutNode[] {
 
   // Compute bounds and return
   return result;
+}
+
+function agentNodesToChart(nodes: OrgNode[]): ChartNode[] {
+  return nodes.map((node) => ({
+    id: node.id,
+    name: node.name,
+    role: node.role,
+    status: node.status,
+    kind: "agent",
+    reports: agentNodesToChart(node.reports),
+  }));
+}
+
+function buildPositionChart(input: {
+  positions: Position[];
+  departments: Department[];
+  assignments: PositionAssignment[];
+  agentMap: Map<string, Agent>;
+  userMap: Map<string, string>;
+}): ChartNode[] {
+  const departmentMap = new Map(input.departments.map((department) => [department.id, department]));
+  const positionMap = new Map(input.positions.map((position) => [position.id, position]));
+  const childrenByParent = new Map<string, Position[]>();
+  const roots: Position[] = [];
+
+  for (const position of input.positions) {
+    const parentId = position.reportsToPositionId;
+    if (parentId && positionMap.has(parentId)) {
+      const children = childrenByParent.get(parentId) ?? [];
+      children.push(position);
+      childrenByParent.set(parentId, children);
+    } else {
+      roots.push(position);
+    }
+  }
+
+  const assignmentMap = new Map<string, PositionAssignment[]>();
+  for (const assignment of input.assignments) {
+    if (assignment.status !== "active") continue;
+    const existing = assignmentMap.get(assignment.positionId) ?? [];
+    existing.push(assignment);
+    assignmentMap.set(assignment.positionId, existing);
+  }
+
+  const toNode = (position: Position): ChartNode => {
+    const department = position.departmentId ? departmentMap.get(position.departmentId) : null;
+    const assignments = (assignmentMap.get(position.id) ?? []).map((assignment) => {
+      if (assignment.principalType === "agent") {
+        const agent = input.agentMap.get(assignment.principalId);
+        return {
+          id: assignment.id,
+          label: agent?.name ?? assignment.principalId,
+          principalType: "agent" as const,
+          agentId: assignment.principalId,
+        };
+      }
+
+      return {
+        id: assignment.id,
+        label: input.userMap.get(assignment.principalId) ?? assignment.principalId,
+        principalType: "user" as const,
+      };
+    });
+
+    return {
+      id: position.id,
+      name: position.name,
+      role: department?.name ?? "Position",
+      status: position.status,
+      kind: "position",
+      departmentName: department?.name ?? null,
+      assignments,
+      reports: (childrenByParent.get(position.id) ?? []).map(toNode),
+    };
+  };
+
+  return roots.map(toNode);
 }
 
 /** Flatten layout tree to list of nodes. */
@@ -336,8 +435,23 @@ export function OrgChart() {
     setBreadcrumbs([{ label: t("组织图", "Org Chart") }]);
   }, [setBreadcrumbs, t]);
 
+  const chartRoots = useMemo(() => {
+    if (activePositions.length > 0) {
+      return buildPositionChart({
+        positions: activePositions,
+        departments: activeDepartments,
+        assignments: positionAssignments ?? [],
+        agentMap,
+        userMap,
+      });
+    }
+    return agentNodesToChart(orgTree ?? []);
+  }, [activeDepartments, activePositions, agentMap, orgTree, positionAssignments, userMap]);
+
+  const chartMode = activePositions.length > 0 ? "positions" : "agents";
+
   // Layout computation
-  const layout = useMemo(() => layoutForest(orgTree ?? []), [orgTree]);
+  const layout = useMemo(() => layoutForest(chartRoots), [chartRoots]);
   const allNodes = useMemo(() => flattenLayout(layout), [layout]);
   const edges = useMemo(() => collectEdges(layout), [layout]);
 
@@ -575,10 +689,6 @@ export function OrgChart() {
     return <PageSkeleton variant="org-chart" />;
   }
 
-  if (orgTree && orgTree.length === 0) {
-    return <EmptyState icon={Network} message={t("尚未定义组织层级。", "No organizational hierarchy defined.")} />;
-  }
-
   return (
     <div className="flex h-[calc(100dvh-9rem)] min-h-[420px] flex-col md:h-full md:min-h-0">
       <div className="mb-2 flex shrink-0 flex-wrap items-center justify-start gap-2">
@@ -592,6 +702,9 @@ export function OrgChart() {
           </div>
           <div className="rounded-md border border-border bg-card px-2.5 py-1.5">
             {t("任职", "Assignments")}: {positionAssignments?.length ?? 0}
+          </div>
+          <div className="rounded-md border border-border bg-card px-2.5 py-1.5">
+            {chartMode === "positions" ? t("岗位组织图", "Position chart") : t("代理组织图", "Agent chart")}
           </div>
         </div>
         <Link to="/company/import">
@@ -887,21 +1000,26 @@ export function OrgChart() {
           }}
         >
           {allNodes.map((node) => {
-            const agent = agentMap.get(node.id);
+            const agent = node.kind === "agent" ? agentMap.get(node.id) : undefined;
             const dotColor = statusDotColor[node.status] ?? defaultDotColor;
 
             return (
               <div
                 key={node.id}
                 data-org-card
-                className="absolute bg-card border border-border rounded-lg shadow-sm hover:shadow-md hover:border-foreground/20 transition-[box-shadow,border-color] duration-150 cursor-pointer select-none"
+                className={cn(
+                  "absolute bg-card border border-border rounded-lg shadow-sm transition-[box-shadow,border-color] duration-150 select-none",
+                  node.kind === "agent" && "cursor-pointer hover:shadow-md hover:border-foreground/20",
+                )}
                 style={{
                   left: node.x,
                   top: node.y,
                   width: CARD_W,
                   minHeight: CARD_H,
                 }}
-                onClick={() => navigate(agent ? agentUrl(agent) : `/agents/${node.id}`)}
+                onClick={() => {
+                  if (agent) navigate(agentUrl(agent));
+                }}
                 onClickCapture={(e) => {
                   if (!suppressNextCardClick.current) return;
                   suppressNextCardClick.current = false;
@@ -913,7 +1031,11 @@ export function OrgChart() {
                   {/* Agent icon + status dot */}
                   <div className="relative shrink-0">
                     <div className="w-9 h-9 rounded-full bg-muted flex items-center justify-center">
-                      <AgentIcon icon={agent?.icon} className="h-4.5 w-4.5 text-foreground/70" />
+                      {node.kind === "agent" ? (
+                        <AgentIcon icon={agent?.icon} className="h-4.5 w-4.5 text-foreground/70" />
+                      ) : (
+                        <Hexagon className="h-4.5 w-4.5 text-foreground/70" />
+                      )}
                     </div>
                     <span
                       className="absolute -bottom-0.5 -right-0.5 h-3 w-3 rounded-full border-2 border-card"
@@ -926,7 +1048,7 @@ export function OrgChart() {
                       {node.name}
                     </span>
                     <span className="text-[11px] text-muted-foreground leading-tight mt-0.5">
-                      {agent?.title ?? roleLabel(node.role)}
+                      {node.kind === "position" ? node.departmentName ?? t("未归属部门", "No department") : agent?.title ?? roleLabel(node.role)}
                     </span>
                     {agent && (
                       <span className="text-[10px] text-muted-foreground/60 font-mono leading-tight mt-1">
@@ -938,12 +1060,43 @@ export function OrgChart() {
                         {agent.capabilities}
                       </span>
                     )}
+                    {node.kind === "position" && (
+                      <div className="mt-1 flex w-full flex-wrap gap-1">
+                        {node.assignments && node.assignments.length > 0 ? (
+                          node.assignments.slice(0, 3).map((assignment) => (
+                            <span
+                              key={assignment.id}
+                              className="inline-flex max-w-full items-center gap-1 rounded bg-muted px-1.5 py-0.5 text-[10px] leading-none text-muted-foreground"
+                            >
+                              {assignment.principalType === "agent" ? (
+                                <AgentIcon
+                                  icon={assignment.agentId ? agentMap.get(assignment.agentId)?.icon : undefined}
+                                  className="h-2.5 w-2.5 shrink-0"
+                                />
+                              ) : (
+                                <UsersRound className="h-2.5 w-2.5 shrink-0" />
+                              )}
+                              <span className="truncate">{assignment.label}</span>
+                            </span>
+                          ))
+                        ) : (
+                          <span className="text-[10px] text-muted-foreground/70">
+                            {t("暂无任职", "No assignments")}
+                          </span>
+                        )}
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>
             );
           })}
         </div>
+        {allNodes.length === 0 && (
+          <div className="absolute inset-0 flex items-center justify-center px-4 text-center text-sm text-muted-foreground pointer-events-none">
+            {t("先创建部门、岗位或代理，即可生成组织图。", "Create departments, positions, or agents to generate the org chart.")}
+          </div>
+        )}
       </div>
     </div>
   );
