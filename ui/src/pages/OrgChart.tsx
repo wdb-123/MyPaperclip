@@ -288,6 +288,8 @@ export function OrgChart() {
   const [assignmentPositionId, setAssignmentPositionId] = useState("");
   const [assignmentPrincipalType, setAssignmentPrincipalType] = useState<"user" | "agent">("agent");
   const [assignmentPrincipalId, setAssignmentPrincipalId] = useState("");
+  const [childDepartmentParentId, setChildDepartmentParentId] = useState<string | null>(null);
+  const [childDepartmentName, setChildDepartmentName] = useState("");
   const departmentNameInputRef = useRef<HTMLInputElement>(null);
 
   const { data: orgTree, isLoading } = useQuery({
@@ -418,9 +420,8 @@ export function OrgChart() {
   const activeUsers = userDirectory?.users ?? [];
 
   const startChildDepartment = useCallback((parentDepartmentId: string) => {
-    setDepartmentParentId(parentDepartmentId);
-    setDepartmentName("");
-    departmentNameInputRef.current?.focus();
+    setChildDepartmentParentId(parentDepartmentId);
+    setChildDepartmentName("");
   }, []);
 
   const invalidateOrganization = useCallback(async () => {
@@ -433,14 +434,16 @@ export function OrgChart() {
   }, [queryClient, selectedCompanyId]);
 
   const createDepartmentMutation = useMutation({
-    mutationFn: () =>
+    mutationFn: (input: { name: string; parentDepartmentId: string | null }) =>
       organizationApi.createDepartment(selectedCompanyId!, {
-        name: departmentName.trim(),
-        parentDepartmentId: departmentParentId || null,
+        name: input.name,
+        parentDepartmentId: input.parentDepartmentId,
       }),
     onSuccess: async () => {
       setDepartmentName("");
       setDepartmentParentId("");
+      setChildDepartmentName("");
+      setChildDepartmentParentId(null);
       await invalidateOrganization();
       pushToast({ title: t("部门已创建", "Department created"), tone: "success" });
     },
@@ -506,7 +509,11 @@ export function OrgChart() {
     if (departmentParentId && !departmentMap.has(departmentParentId)) {
       setDepartmentParentId("");
     }
-  }, [departmentMap, departmentParentId]);
+    if (childDepartmentParentId && !departmentMap.has(childDepartmentParentId)) {
+      setChildDepartmentParentId(null);
+      setChildDepartmentName("");
+    }
+  }, [childDepartmentParentId, departmentMap, departmentParentId]);
 
   useEffect(() => {
     if (!positionDepartmentId && activeDepartments.length > 0) {
@@ -823,7 +830,10 @@ export function OrgChart() {
           onSubmit={(event) => {
             event.preventDefault();
             if (!departmentName.trim() || createDepartmentMutation.isPending) return;
-            createDepartmentMutation.mutate();
+            createDepartmentMutation.mutate({
+              name: departmentName.trim(),
+              parentDepartmentId: departmentParentId || null,
+            });
           }}
         >
           <div className="mb-2 text-sm font-medium">{t("创建部门", "Create Department")}</div>
@@ -1018,6 +1028,8 @@ export function OrgChart() {
             onClick={() => {
               setDepartmentParentId("");
               setDepartmentName("");
+              setChildDepartmentParentId(null);
+              setChildDepartmentName("");
               departmentNameInputRef.current?.focus();
             }}
           >
@@ -1055,6 +1067,62 @@ export function OrgChart() {
                     {t("添加下级", "Add child")}
                   </Button>
                 </div>
+                {childDepartmentParentId === department.id ? (
+                  <form
+                    className="mt-3 grid gap-2 rounded-md border border-border bg-muted/30 p-2"
+                    onSubmit={(event) => {
+                      event.preventDefault();
+                      if (!childDepartmentName.trim() || !childDepartmentParentId || createDepartmentMutation.isPending) return;
+                      createDepartmentMutation.mutate({
+                        name: childDepartmentName.trim(),
+                        parentDepartmentId: childDepartmentParentId,
+                      });
+                    }}
+                  >
+                    <label className="grid gap-1 text-xs font-medium text-muted-foreground">
+                      <span>{t("下级部门名称", "Child department name")}</span>
+                      <input
+                        className="h-8 rounded-md border border-input bg-background px-2 text-sm outline-none focus:border-ring"
+                        value={childDepartmentName}
+                        onChange={(event) => setChildDepartmentName(event.target.value)}
+                        placeholder={t("输入下级部门名称", "Enter child department name")}
+                        autoFocus
+                      />
+                    </label>
+                    <label className="grid gap-1 text-xs font-medium text-muted-foreground">
+                      <span>{t("挂到哪个上级部门", "Parent department")}</span>
+                      <select
+                        className="h-8 rounded-md border border-input bg-background px-2 text-sm outline-none focus:border-ring"
+                        value={childDepartmentParentId}
+                        onChange={(event) => setChildDepartmentParentId(event.target.value)}
+                      >
+                        {activeDepartments.map((candidate) => (
+                          <option key={candidate.id} value={candidate.id}>{candidate.name}</option>
+                        ))}
+                      </select>
+                    </label>
+                    <div className="flex justify-end gap-2">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => {
+                          setChildDepartmentParentId(null);
+                          setChildDepartmentName("");
+                        }}
+                      >
+                        {t("取消", "Cancel")}
+                      </Button>
+                      <Button
+                        type="submit"
+                        size="sm"
+                        disabled={!childDepartmentName.trim() || createDepartmentMutation.isPending}
+                      >
+                        {createDepartmentMutation.isPending ? t("正在创建...", "Creating...") : t("创建下级", "Create child")}
+                      </Button>
+                    </div>
+                  </form>
+                ) : null}
               </div>
             ))}
           </div>
