@@ -382,6 +382,13 @@ Add company settings for:
 - Link workflows to issues.
 - Add decision API and activity logs.
 
+Initial API slice landed:
+
+- Workflow tables: templates, instances, stage instances, participants.
+- `POST /api/issues/:issueId/workflows?companyId=...` starts an issue workflow.
+- `GET /api/issues/:issueId/workflows?companyId=...` reads workflow state with stages and participants.
+- `POST /api/workflow-stages/:stageId/decisions` records participant decisions and advances or completes the workflow.
+
 ### Phase 3: Inbox And Feishu Routing
 
 - Add durable inbox items.
@@ -431,4 +438,3 @@ Critical invariants:
 3. Should Feishu action buttons approve directly, or only deep-link back into Paperclip for approval?
 4. Should department visibility default to open within company or restricted by subtree?
 5. Should workflow templates be mandatory for all issues, or optional per issue/project?
-

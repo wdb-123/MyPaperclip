@@ -14,6 +14,7 @@ export {
 } from "./issue-continuation-summary.js";
 export { projectService } from "./projects.js";
 export { organizationService } from "./organization.js";
+export { workflowService } from "./workflows.js";
 export {
   clampIssueListLimit,
   ISSUE_LIST_DEFAULT_LIMIT,

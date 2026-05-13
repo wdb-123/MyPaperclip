@@ -41,6 +41,13 @@ export {
   type UpdatePositionAssignment,
 } from "./organization.js";
 export {
+  startIssueWorkflowSchema,
+  workflowDecisionSchema,
+  type StartIssueWorkflow,
+  type WorkflowDecisionInput,
+  type WorkflowParticipantInput,
+} from "./workflow.js";
+export {
   environmentDriverSchema,
   environmentStatusSchema,
   environmentLeaseStatusSchema,

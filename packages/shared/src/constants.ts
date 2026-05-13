@@ -562,6 +562,33 @@ export type PositionAssignmentPrincipalType = (typeof POSITION_ASSIGNMENT_PRINCI
 export const POSITION_ASSIGNMENT_STATUSES = ["active", "ended"] as const;
 export type PositionAssignmentStatus = (typeof POSITION_ASSIGNMENT_STATUSES)[number];
 
+export const WORKFLOW_TEMPLATE_STATUSES = ["active", "archived"] as const;
+export type WorkflowTemplateStatus = (typeof WORKFLOW_TEMPLATE_STATUSES)[number];
+
+export const WORKFLOW_TRIGGER_KINDS = ["manual", "issue_status", "approval_type"] as const;
+export type WorkflowTriggerKind = (typeof WORKFLOW_TRIGGER_KINDS)[number];
+
+export const WORKFLOW_SUBJECT_TYPES = ["issue", "approval"] as const;
+export type WorkflowSubjectType = (typeof WORKFLOW_SUBJECT_TYPES)[number];
+
+export const WORKFLOW_INSTANCE_STATUSES = ["active", "completed", "cancelled", "failed"] as const;
+export type WorkflowInstanceStatus = (typeof WORKFLOW_INSTANCE_STATUSES)[number];
+
+export const WORKFLOW_STAGE_TYPES = ["assignment", "review", "approval", "notification"] as const;
+export type WorkflowStageType = (typeof WORKFLOW_STAGE_TYPES)[number];
+
+export const WORKFLOW_STAGE_STATUSES = ["pending", "in_progress", "approved", "rejected", "skipped", "cancelled"] as const;
+export type WorkflowStageStatus = (typeof WORKFLOW_STAGE_STATUSES)[number];
+
+export const WORKFLOW_PARTICIPANT_PRINCIPAL_TYPES = ["user", "agent", "position"] as const;
+export type WorkflowParticipantPrincipalType = (typeof WORKFLOW_PARTICIPANT_PRINCIPAL_TYPES)[number];
+
+export const WORKFLOW_PARTICIPANT_ROLES = ["assignee", "reviewer", "approver", "observer"] as const;
+export type WorkflowParticipantRole = (typeof WORKFLOW_PARTICIPANT_ROLES)[number];
+
+export const WORKFLOW_DECISIONS = ["approved", "rejected", "revision_requested"] as const;
+export type WorkflowDecision = (typeof WORKFLOW_DECISIONS)[number];
+
 export const INSTANCE_USER_ROLES = ["instance_admin"] as const;
 export type InstanceUserRole = (typeof INSTANCE_USER_ROLES)[number];
 
