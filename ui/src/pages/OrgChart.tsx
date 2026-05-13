@@ -14,7 +14,7 @@ import { Button } from "@/components/ui/button";
 import { EmptyState } from "../components/EmptyState";
 import { PageSkeleton } from "../components/PageSkeleton";
 import { AgentIcon } from "../components/AgentIconPicker";
-import { Download, Hexagon, Maximize2, Minus, Network, Plus, Upload, UsersRound } from "lucide-react";
+import { Download, Hexagon, Maximize2, Minus, Network, Pencil, Plus, Trash2, Upload, UsersRound } from "lucide-react";
 import { AGENT_ROLE_LABELS, type Agent } from "@paperclipai/shared";
 
 // Layout constants
@@ -291,6 +291,10 @@ export function OrgChart() {
   const [assignmentDraftPositionId, setAssignmentDraftPositionId] = useState<string | null>(null);
   const [assignmentDraftPrincipalType, setAssignmentDraftPrincipalType] = useState<"user" | "agent">("user");
   const [assignmentDraftPrincipalId, setAssignmentDraftPrincipalId] = useState("");
+  const [editingDepartmentId, setEditingDepartmentId] = useState<string | null>(null);
+  const [editingDepartmentName, setEditingDepartmentName] = useState("");
+  const [editingPositionId, setEditingPositionId] = useState<string | null>(null);
+  const [editingPositionName, setEditingPositionName] = useState("");
   const departmentNameInputRef = useRef<HTMLInputElement>(null);
 
   const { data: orgTree, isLoading } = useQuery({
@@ -426,6 +430,16 @@ export function OrgChart() {
     setAssignmentDraftPrincipalId("");
   }, []);
 
+  const startDepartmentEdit = useCallback((department: Department) => {
+    setEditingDepartmentId(department.id);
+    setEditingDepartmentName(department.name);
+  }, []);
+
+  const startPositionEdit = useCallback((position: Position) => {
+    setEditingPositionId(position.id);
+    setEditingPositionName(position.name);
+  }, []);
+
   const getDepartmentLineageIds = useCallback((departmentId: string) => {
     const ids: string[] = [];
     let cursor: string | null = departmentId;
@@ -524,6 +538,64 @@ export function OrgChart() {
     onError: (error) => {
       pushToast({
         title: t("创建任职失败", "Failed to create assignment"),
+        body: error instanceof Error ? error.message : t("未知错误", "Unknown error"),
+        tone: "error",
+      });
+    },
+  });
+
+  const updateDepartmentMutation = useMutation({
+    mutationFn: (input: { id: string; name?: string; status?: "active" | "archived" }) =>
+      organizationApi.updateDepartment(input.id, {
+        ...(input.name !== undefined ? { name: input.name } : {}),
+        ...(input.status ? { status: input.status } : {}),
+      }),
+    onSuccess: async () => {
+      setEditingDepartmentId(null);
+      setEditingDepartmentName("");
+      await invalidateOrganization();
+      pushToast({ title: t("部门已更新", "Department updated"), tone: "success" });
+    },
+    onError: (error) => {
+      pushToast({
+        title: t("更新部门失败", "Failed to update department"),
+        body: error instanceof Error ? error.message : t("未知错误", "Unknown error"),
+        tone: "error",
+      });
+    },
+  });
+
+  const updatePositionMutation = useMutation({
+    mutationFn: (input: { id: string; name?: string; status?: "active" | "archived" }) =>
+      organizationApi.updatePosition(input.id, {
+        ...(input.name !== undefined ? { name: input.name } : {}),
+        ...(input.status ? { status: input.status } : {}),
+      }),
+    onSuccess: async () => {
+      setEditingPositionId(null);
+      setEditingPositionName("");
+      await invalidateOrganization();
+      pushToast({ title: t("岗位已更新", "Position updated"), tone: "success" });
+    },
+    onError: (error) => {
+      pushToast({
+        title: t("更新岗位失败", "Failed to update position"),
+        body: error instanceof Error ? error.message : t("未知错误", "Unknown error"),
+        tone: "error",
+      });
+    },
+  });
+
+  const endAssignmentMutation = useMutation({
+    mutationFn: (assignmentId: string) =>
+      organizationApi.updatePositionAssignment(assignmentId, { status: "ended" }),
+    onSuccess: async () => {
+      await invalidateOrganization();
+      pushToast({ title: t("任职已结束", "Assignment ended"), tone: "success" });
+    },
+    onError: (error) => {
+      pushToast({
+        title: t("结束任职失败", "Failed to end assignment"),
         body: error instanceof Error ? error.message : t("未知错误", "Unknown error"),
         tone: "error",
       });
@@ -938,18 +1010,64 @@ export function OrgChart() {
               <div key={department.id} className="rounded-md border border-border bg-background px-3 py-2">
                 <div className="flex items-start justify-between gap-2">
                   <div className="min-w-0" style={{ paddingLeft: `${Math.min(depth, 4) * 12}px` }}>
-                    <div className="truncate text-sm font-medium">{department.name}</div>
+                    {editingDepartmentId === department.id ? (
+                      <form
+                        className="flex min-w-0 gap-2"
+                        onSubmit={(event) => {
+                          event.preventDefault();
+                          if (!editingDepartmentName.trim() || updateDepartmentMutation.isPending) return;
+                          updateDepartmentMutation.mutate({
+                            id: department.id,
+                            name: editingDepartmentName.trim(),
+                          });
+                        }}
+                      >
+                        <input
+                          className="h-8 min-w-0 rounded-md border border-input bg-background px-2 text-sm outline-none focus:border-ring"
+                          value={editingDepartmentName}
+                          onChange={(event) => setEditingDepartmentName(event.target.value)}
+                          autoFocus
+                        />
+                        <Button type="submit" size="xs" disabled={!editingDepartmentName.trim() || updateDepartmentMutation.isPending}>
+                          {t("保存", "Save")}
+                        </Button>
+                      </form>
+                    ) : (
+                      <div className="truncate text-sm font-medium">{department.name}</div>
+                    )}
                     <div className="truncate text-xs text-muted-foreground">
                       {t("上级", "Parent")}: {parentName}
                     </div>
                   </div>
-                  <div className="flex shrink-0 gap-1">
+                  <div className="flex shrink-0 flex-wrap justify-end gap-1">
                     <span className="rounded border border-border px-1.5 py-0.5 text-[10px] text-muted-foreground">
                       {t("下级", "Children")} {childCount}
                     </span>
                     <span className="rounded border border-border px-1.5 py-0.5 text-[10px] text-muted-foreground">
                       {t("岗位", "Positions")} {departmentPositions.length}
                     </span>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon-xs"
+                      title={t("编辑部门", "Edit department")}
+                      onClick={() => startDepartmentEdit(department)}
+                    >
+                      <Pencil className="h-3 w-3" />
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon-xs"
+                      title={t("删除部门", "Delete department")}
+                      disabled={childCount > 0 || departmentPositions.length > 0 || updateDepartmentMutation.isPending}
+                      onClick={() => {
+                        if (!window.confirm(t("归档这个部门？需要先删除下级部门和岗位。", "Archive this department? Child departments and positions must be removed first."))) return;
+                        updateDepartmentMutation.mutate({ id: department.id, status: "archived" });
+                      }}
+                    >
+                      <Trash2 className="h-3 w-3" />
+                    </Button>
                   </div>
                 </div>
                 <div className="mt-2 grid gap-1 rounded-md bg-muted/20 p-2">
@@ -967,7 +1085,31 @@ export function OrgChart() {
                           <div key={position.id} className="grid gap-2 rounded border border-border bg-background px-2 py-2 text-xs">
                             <div className="flex items-start justify-between gap-2">
                               <div className="min-w-0">
-                                <div className="font-medium">{position.name}</div>
+                                {editingPositionId === position.id ? (
+                                  <form
+                                    className="mb-1 flex min-w-0 gap-2"
+                                    onSubmit={(event) => {
+                                      event.preventDefault();
+                                      if (!editingPositionName.trim() || updatePositionMutation.isPending) return;
+                                      updatePositionMutation.mutate({
+                                        id: position.id,
+                                        name: editingPositionName.trim(),
+                                      });
+                                    }}
+                                  >
+                                    <input
+                                      className="h-7 min-w-0 rounded-md border border-input bg-background px-2 text-xs outline-none focus:border-ring"
+                                      value={editingPositionName}
+                                      onChange={(event) => setEditingPositionName(event.target.value)}
+                                      autoFocus
+                                    />
+                                    <Button type="submit" size="xs" disabled={!editingPositionName.trim() || updatePositionMutation.isPending}>
+                                      {t("保存", "Save")}
+                                    </Button>
+                                  </form>
+                                ) : (
+                                  <div className="font-medium">{position.name}</div>
+                                )}
                                 <div className="text-muted-foreground">
                                   {reportsTo
                                     ? `${t("汇报给", "Reports to")}: ${formatPositionWithDepartment(reportsTo)}`
@@ -978,15 +1120,50 @@ export function OrgChart() {
                                 {assignments.length > 0 ? t("已任职", "Filled") : t("空缺", "Open")}
                               </span>
                             </div>
+                            <div className="flex justify-end gap-1">
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="xs"
+                                onClick={() => startPositionEdit(position)}
+                              >
+                                <Pencil className="h-3 w-3" />
+                                {t("编辑", "Edit")}
+                              </Button>
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="xs"
+                                disabled={assignments.length > 0 || updatePositionMutation.isPending}
+                                onClick={() => {
+                                  if (!window.confirm(t("归档这个岗位？需要先结束任职。", "Archive this position? Active assignments must be ended first."))) return;
+                                  updatePositionMutation.mutate({ id: position.id, status: "archived" });
+                                }}
+                              >
+                                <Trash2 className="h-3 w-3" />
+                                {t("删除", "Delete")}
+                              </Button>
+                            </div>
                             <div className="flex flex-wrap items-center gap-1">
                               <span className="text-muted-foreground">{t("任职者", "Occupant")}:</span>
                               {assignments.length === 0 ? (
                                 <span className="text-muted-foreground">{t("未分配", "Unassigned")}</span>
                               ) : assignments.map((assignment) => (
-                                <span key={assignment.id} className="rounded bg-muted px-1.5 py-0.5">
+                                <span key={assignment.id} className="inline-flex items-center gap-1 rounded bg-muted px-1.5 py-0.5">
                                   {assignment.principalType === "agent"
                                     ? agentMap.get(assignment.principalId)?.name ?? assignment.principalId
                                     : userMap.get(assignment.principalId) ?? assignment.principalId}
+                                  <button
+                                    type="button"
+                                    className="text-muted-foreground hover:text-destructive"
+                                    title={t("结束任职", "End assignment")}
+                                    onClick={() => {
+                                      if (!window.confirm(t("结束这个任职？", "End this assignment?"))) return;
+                                      endAssignmentMutation.mutate(assignment.id);
+                                    }}
+                                  >
+                                    ×
+                                  </button>
                                 </span>
                               ))}
                             </div>
