@@ -13,19 +13,22 @@ import { agentsApi } from "../api/agents";
 import { accessApi } from "../api/access";
 import { authApi } from "../api/auth";
 import { assetsApi } from "../api/assets";
-import { buildCompanyUserInlineOptions, buildMarkdownMentionOptions } from "../lib/company-members";
+import { organizationApi } from "../api/organization";
+import { buildCompanyUserInlineOptions, buildCompanyUserLabelMap, buildMarkdownMentionOptions } from "../lib/company-members";
 import { queryKeys } from "../lib/queryKeys";
 import { orderReusableExecutionWorkspaces } from "../lib/reusable-execution-workspaces";
 import { useProjectOrder } from "../hooks/useProjectOrder";
-import { getRecentAssigneeIds, sortAgentsByRecency, trackRecentAssignee } from "../lib/recent-assignees";
+import { getRecentAssigneeIds, sortAgentsByRecency, trackRecentAssignee, trackRecentAssigneeUser } from "../lib/recent-assignees";
 import { getRecentProjectIds, trackRecentProject } from "../lib/recent-projects";
 import { buildExecutionPolicy } from "../lib/issue-execution-policy";
 import { useToastActions } from "../context/ToastContext";
 import {
   assigneeValueFromSelection,
   currentUserAssigneeOption,
+  formatAssigneeUserLabel,
   parseAssigneeValue,
 } from "../lib/assignees";
+import { buildPositionAssigneeOptions } from "../lib/position-assignees";
 import {
   Dialog,
   DialogContent,
@@ -60,6 +63,7 @@ import {
   X,
   Eye,
   ShieldCheck,
+  Hexagon,
 } from "lucide-react";
 import { cn } from "../lib/utils";
 import { extractProviderIdWithFallback } from "../lib/model-utils";
@@ -478,6 +482,16 @@ export function NewIssueDialog() {
   const { data: companyMembers } = useQuery({
     queryKey: queryKeys.access.companyUserDirectory(effectiveCompanyId!),
     queryFn: () => accessApi.listUserDirectory(effectiveCompanyId!),
+    enabled: Boolean(effectiveCompanyId) && newIssueOpen,
+  });
+  const { data: positions } = useQuery({
+    queryKey: queryKeys.organization.positions(effectiveCompanyId!),
+    queryFn: () => organizationApi.listPositions(effectiveCompanyId!),
+    enabled: Boolean(effectiveCompanyId) && newIssueOpen,
+  });
+  const { data: positionAssignments } = useQuery({
+    queryKey: queryKeys.organization.positionAssignments(effectiveCompanyId!),
+    queryFn: () => organizationApi.listPositionAssignments(effectiveCompanyId!),
     enabled: Boolean(effectiveCompanyId) && newIssueOpen,
   });
   const { data: experimentalSettings } = useQuery({
@@ -1103,20 +1117,33 @@ export function NewIssueDialog() {
     [recentAssigneeIds],
   );
   const recentProjectIds = useMemo(() => getRecentProjectIds(), [newIssueOpen]);
+  const userLabelMap = useMemo(
+    () => buildCompanyUserLabelMap(companyMembers?.users),
+    [companyMembers?.users],
+  );
   const assigneeOptions = useMemo<InlineEntityOption[]>(
-    () => [
-      ...currentUserAssigneeOption(currentUserId),
-      ...buildCompanyUserInlineOptions(companyMembers?.users, { excludeUserIds: [currentUserId] }),
-      ...sortAgentsByRecency(
+    () => {
+      const positionOptions = buildPositionAssigneeOptions({
+        positions,
+        assignments: positionAssignments,
+        agents,
+        userLabel: (userId) => formatAssigneeUserLabel(userId, currentUserId, userLabelMap),
+      });
+      return [
+        ...currentUserAssigneeOption(currentUserId),
+        ...buildCompanyUserInlineOptions(companyMembers?.users, { excludeUserIds: [currentUserId] }),
+        ...sortAgentsByRecency(
         (agents ?? []).filter((agent) => agent.status !== "terminated"),
         recentAssigneeIds,
-      ).map((agent) => ({
-        id: assigneeValueFromSelection({ assigneeAgentId: agent.id }),
-        label: agent.name,
-        searchText: `${agent.name} ${agent.role} ${agent.title ?? ""}`,
-      })),
-    ],
-    [agents, companyMembers?.users, currentUserId, recentAssigneeIds],
+        ).map((agent) => ({
+          id: assigneeValueFromSelection({ assigneeAgentId: agent.id }),
+          label: agent.name,
+          searchText: `${agent.name} ${agent.role} ${agent.title ?? ""}`,
+        })),
+        ...positionOptions,
+      ];
+    },
+    [agents, companyMembers?.users, currentUserId, positionAssignments, positions, recentAssigneeIds, userLabelMap],
   );
   const projectOptions = useMemo<InlineEntityOption[]>(
     () =>
@@ -1336,11 +1363,16 @@ export function NewIssueDialog() {
                 searchPlaceholder="搜索负责人..."
                 emptyMessage="未找到负责人。"
                 onChange={(value) => {
-                  const nextAssignee = parseAssigneeValue(value);
+                  const resolvedValue = (
+                    assigneeOptions.find((option) => option.id === value) as (InlineEntityOption & { resolvedAssigneeValue?: string }) | undefined
+                  )?.resolvedAssigneeValue ?? value;
+                  const nextAssignee = parseAssigneeValue(resolvedValue);
                   if (nextAssignee.assigneeAgentId) {
                     trackRecentAssignee(nextAssignee.assigneeAgentId);
+                  } else if (nextAssignee.assigneeUserId) {
+                    trackRecentAssigneeUser(nextAssignee.assigneeUserId);
                   }
-                  setAssigneeValue(value);
+                  setAssigneeValue(resolvedValue);
                 }}
                 onConfirm={() => {
                   if (projectId) {
@@ -1365,12 +1397,19 @@ export function NewIssueDialog() {
                 }
                 renderOption={(option) => {
                   if (!option.id) return <span className="truncate">{option.label}</span>;
-                  const assignee = parseAssigneeValue(option.id).assigneeAgentId
-                    ? (agents ?? []).find((agent) => agent.id === parseAssigneeValue(option.id).assigneeAgentId)
+                  const resolvedValue = (option as InlineEntityOption & { resolvedAssigneeValue?: string }).resolvedAssigneeValue ?? option.id;
+                  const parsedAssignee = parseAssigneeValue(resolvedValue);
+                  const assignee = parsedAssignee.assigneeAgentId
+                    ? (agents ?? []).find((agent) => agent.id === parsedAssignee.assigneeAgentId)
                     : null;
+                  const isPositionOption = option.id.startsWith("position:");
                   return (
                     <>
-                      {assignee ? <AgentIcon icon={assignee.icon} className="h-3.5 w-3.5 shrink-0 text-muted-foreground" /> : null}
+                      {assignee ? (
+                        <AgentIcon icon={assignee.icon} className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                      ) : isPositionOption ? (
+                        <Hexagon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                      ) : null}
                       <span className="truncate">{option.label}</span>
                     </>
                   );

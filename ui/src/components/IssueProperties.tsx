@@ -8,6 +8,7 @@ import { agentsApi } from "../api/agents";
 import { authApi } from "../api/auth";
 import { instanceSettingsApi } from "../api/instanceSettings";
 import { issuesApi } from "../api/issues";
+import { organizationApi } from "../api/organization";
 import { projectsApi } from "../api/projects";
 import { useCompany } from "../context/CompanyContext";
 import { queryKeys } from "../lib/queryKeys";
@@ -23,6 +24,7 @@ import {
 import { getRecentProjectIds, trackRecentProject } from "../lib/recent-projects";
 import { orderItemsBySelectedAndRecent } from "../lib/recent-selections";
 import { formatAssigneeUserLabel } from "../lib/assignees";
+import { buildPositionAssigneeOptions } from "../lib/position-assignees";
 import { buildExecutionPolicy, stageParticipantValues } from "../lib/issue-execution-policy";
 import { formatMonitorOffset } from "../lib/issue-monitor";
 import { StatusIcon } from "./StatusIcon";
@@ -341,6 +343,16 @@ export function IssueProperties({
     queryFn: () => accessApi.listUserDirectory(companyId!),
     enabled: !!companyId,
   });
+  const { data: positions } = useQuery({
+    queryKey: queryKeys.organization.positions(companyId!),
+    queryFn: () => organizationApi.listPositions(companyId!),
+    enabled: !!companyId,
+  });
+  const { data: positionAssignments } = useQuery({
+    queryKey: queryKeys.organization.positionAssignments(companyId!),
+    queryFn: () => organizationApi.listPositionAssignments(companyId!),
+    enabled: !!companyId,
+  });
   const { data: experimentalSettings } = useQuery({
     queryKey: queryKeys.instance.experimentalSettings,
     queryFn: () => instanceSettingsApi.getExperimental(),
@@ -474,9 +486,22 @@ export function IssueProperties({
     () => buildCompanyUserLabelMap(companyMembers?.users),
     [companyMembers?.users],
   );
+  const userLabel = useCallback(
+    (userId: string | null | undefined) => formatAssigneeUserLabel(userId, currentUserId, userLabelMap),
+    [currentUserId, userLabelMap],
+  );
   const otherUserOptions = useMemo(
     () => buildCompanyUserInlineOptions(companyMembers?.users, { excludeUserIds: [currentUserId, issue.createdByUserId] }),
     [companyMembers?.users, currentUserId, issue.createdByUserId],
+  );
+  const positionAssigneeOptions = useMemo(
+    () => buildPositionAssigneeOptions({
+      positions,
+      assignments: positionAssignments,
+      agents,
+      userLabel: (userId) => userLabel(userId),
+    }),
+    [agents, positionAssignments, positions, userLabel],
   );
 
   const assignee = issue.assigneeAgentId
@@ -484,7 +509,6 @@ export function IssueProperties({
     : null;
   const reviewerValues = stageParticipantValues(issue.executionPolicy, "review");
   const approverValues = stageParticipantValues(issue.executionPolicy, "approval");
-  const userLabel = (userId: string | null | undefined) => formatAssigneeUserLabel(userId, currentUserId, userLabelMap);
   const assigneeUserLabel = userLabel(issue.assigneeUserId);
   const creatorUserLabel = userLabel(issue.createdByUserId);
   const selectedAssigneeValue = issue.assigneeAgentId
@@ -856,6 +880,10 @@ export function IssueProperties({
         label: option.label,
         searchText: option.searchText ?? "",
       })),
+      ...positionAssigneeOptions.map((option) => ({
+        ...option,
+        kind: "position" as const,
+      })),
       ...sortedAgents.map((agent) => ({
         id: `agent:${agent.id}`,
         kind: "agent" as const,
@@ -898,6 +926,14 @@ export function IssueProperties({
                 } else if (option.kind === "user") {
                   trackRecentAssigneeUser(option.userId);
                   onUpdate({ assigneeAgentId: null, assigneeUserId: option.userId });
+                } else if (option.kind === "position") {
+                  if (option.principalType === "agent") {
+                    trackRecentAssignee(option.principalId);
+                    onUpdate({ assigneeAgentId: option.principalId, assigneeUserId: null });
+                  } else {
+                    trackRecentAssigneeUser(option.principalId);
+                    onUpdate({ assigneeAgentId: null, assigneeUserId: option.principalId });
+                  }
                 } else {
                   onUpdate({ assigneeAgentId: null, assigneeUserId: null });
                 }
@@ -908,6 +944,8 @@ export function IssueProperties({
                 <AgentIcon icon={option.agent.icon} className="shrink-0 h-3 w-3 text-muted-foreground" />
               ) : option.kind === "user" ? (
                 <User className="h-3 w-3 shrink-0 text-muted-foreground" />
+              ) : option.kind === "position" ? (
+                <Hexagon className="h-3 w-3 shrink-0 text-muted-foreground" />
               ) : null}
               {option.label}
             </button>
