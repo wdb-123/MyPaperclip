@@ -288,6 +288,7 @@ export function OrgChart() {
   const [assignmentPositionId, setAssignmentPositionId] = useState("");
   const [assignmentPrincipalType, setAssignmentPrincipalType] = useState<"user" | "agent">("agent");
   const [assignmentPrincipalId, setAssignmentPrincipalId] = useState("");
+  const departmentNameInputRef = useRef<HTMLInputElement>(null);
 
   const { data: orgTree, isLoading } = useQuery({
     queryKey: queryKeys.org(selectedCompanyId!),
@@ -355,6 +356,39 @@ export function OrgChart() {
     return m;
   }, [activeDepartments]);
 
+  const departmentRows = useMemo(() => {
+    const childCount = new Map<string, number>();
+    for (const department of activeDepartments) {
+      if (!department.parentDepartmentId) continue;
+      childCount.set(department.parentDepartmentId, (childCount.get(department.parentDepartmentId) ?? 0) + 1);
+    }
+
+    const getDepth = (department: Department) => {
+      let depth = 0;
+      let cursor = department.parentDepartmentId;
+      const visited = new Set<string>();
+      while (cursor && !visited.has(cursor)) {
+        visited.add(cursor);
+        const parent = departmentMap.get(cursor);
+        if (!parent) break;
+        depth += 1;
+        cursor = parent.parentDepartmentId;
+      }
+      return depth;
+    };
+
+    return activeDepartments
+      .map((department) => ({
+        department,
+        childCount: childCount.get(department.id) ?? 0,
+        depth: getDepth(department),
+        parentName: department.parentDepartmentId
+          ? departmentMap.get(department.parentDepartmentId)?.name ?? t("未知上级", "Unknown parent")
+          : t("公司直属", "Company-level"),
+      }))
+      .sort((a, b) => a.depth - b.depth || a.department.name.localeCompare(b.department.name));
+  }, [activeDepartments, departmentMap, t]);
+
   const activePositionAssignments = useMemo(
     () => (positionAssignments ?? []).filter((assignment) => assignment.status === "active"),
     [positionAssignments],
@@ -382,6 +416,12 @@ export function OrgChart() {
   );
 
   const activeUsers = userDirectory?.users ?? [];
+
+  const startChildDepartment = useCallback((parentDepartmentId: string) => {
+    setDepartmentParentId(parentDepartmentId);
+    setDepartmentName("");
+    departmentNameInputRef.current?.focus();
+  }, []);
 
   const invalidateOrganization = useCallback(async () => {
     if (!selectedCompanyId) return;
@@ -788,12 +828,18 @@ export function OrgChart() {
         >
           <div className="mb-2 text-sm font-medium">{t("创建部门", "Create Department")}</div>
           <div className="grid gap-2">
+            <label className="grid gap-1 text-xs font-medium text-muted-foreground">
+              <span>{t("部门名称", "Department name")}</span>
             <input
+              ref={departmentNameInputRef}
               className="h-8 rounded-md border border-input bg-background px-2 text-sm outline-none focus:border-ring"
               value={departmentName}
               onChange={(event) => setDepartmentName(event.target.value)}
               placeholder={t("部门名称", "Department name")}
             />
+            </label>
+            <label className="grid gap-1 text-xs font-medium text-muted-foreground">
+              <span>{t("上级部门", "Parent department")}</span>
             <select
               className="h-8 rounded-md border border-input bg-background px-2 text-sm outline-none focus:border-ring"
               value={departmentParentId}
@@ -804,6 +850,7 @@ export function OrgChart() {
                 <option key={department.id} value={department.id}>{department.name}</option>
               ))}
             </select>
+            </label>
             <div className="text-xs leading-5 text-muted-foreground">
               {t("上级部门只用于创建子部门；一级部门直接挂在公司下。", "Parent department is only for child departments; top-level departments report to the company.")}
             </div>
@@ -827,12 +874,17 @@ export function OrgChart() {
         >
           <div className="mb-2 text-sm font-medium">{t("创建岗位", "Create Position")}</div>
           <div className="grid gap-2">
+            <label className="grid gap-1 text-xs font-medium text-muted-foreground">
+              <span>{t("岗位名称", "Position name")}</span>
             <input
               className="h-8 rounded-md border border-input bg-background px-2 text-sm outline-none focus:border-ring"
               value={positionName}
               onChange={(event) => setPositionName(event.target.value)}
               placeholder={t("岗位名称", "Position name")}
             />
+            </label>
+            <label className="grid gap-1 text-xs font-medium text-muted-foreground">
+              <span>{t("所属部门", "Department")}</span>
             <select
               className="h-8 rounded-md border border-input bg-background px-2 text-sm outline-none focus:border-ring"
               value={positionDepartmentId}
@@ -844,6 +896,9 @@ export function OrgChart() {
                 <option key={department.id} value={department.id}>{department.name}</option>
               ))}
             </select>
+            </label>
+            <label className="grid gap-1 text-xs font-medium text-muted-foreground">
+              <span>{t("汇报给", "Reports to")}</span>
             <select
               className="h-8 rounded-md border border-input bg-background px-2 text-sm outline-none focus:border-ring"
               value={positionReportsToId}
@@ -855,6 +910,7 @@ export function OrgChart() {
                 <option key={position.id} value={position.id}>{position.name}</option>
               ))}
             </select>
+            </label>
             <div className="text-xs leading-5 text-muted-foreground">
               {activeDepartments.length === 0
                 ? t("先创建部门，再在部门内创建岗位。", "Create a department before adding positions.")
@@ -880,6 +936,8 @@ export function OrgChart() {
         >
           <div className="mb-2 text-sm font-medium">{t("分配岗位", "Assign Position")}</div>
           <div className="grid gap-2">
+            <label className="grid gap-1 text-xs font-medium text-muted-foreground">
+              <span>{t("空缺岗位", "Open position")}</span>
             <select
               className="h-8 rounded-md border border-input bg-background px-2 text-sm outline-none focus:border-ring"
               value={assignmentPositionId}
@@ -896,6 +954,9 @@ export function OrgChart() {
                 </option>
               ))}
             </select>
+            </label>
+            <label className="grid gap-1 text-xs font-medium text-muted-foreground">
+              <span>{t("任职对象类型", "Principal type")}</span>
             <select
               className="h-8 rounded-md border border-input bg-background px-2 text-sm outline-none focus:border-ring"
               value={assignmentPrincipalType}
@@ -907,6 +968,9 @@ export function OrgChart() {
               <option value="agent">{t("代理", "Agent")}</option>
               <option value="user">{t("用户", "User")}</option>
             </select>
+            </label>
+            <label className="grid gap-1 text-xs font-medium text-muted-foreground">
+              <span>{t("任职对象", "Principal")}</span>
             <select
               className="h-8 rounded-md border border-input bg-background px-2 text-sm outline-none focus:border-ring"
               value={assignmentPrincipalId}
@@ -923,6 +987,7 @@ export function OrgChart() {
                   </option>
                 ))}
             </select>
+            </label>
             <div className="text-xs leading-5 text-muted-foreground">
               {openPositions.length === 0
                 ? t("没有空缺岗位；先创建岗位或结束现有任职。", "No open positions; create a position or end an active assignment first.")
@@ -937,6 +1002,63 @@ export function OrgChart() {
             </Button>
           </div>
         </form>
+      </div>
+      <div className="mb-3 shrink-0 rounded-md border border-border bg-card p-3">
+        <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+          <div>
+            <div className="text-sm font-medium">{t("部门结构", "Department Structure")}</div>
+            <div className="text-xs text-muted-foreground">
+              {t("选择“公司直属”创建一级部门；在某个部门行点击“添加下级”创建子部门。", "Choose company-level for a top-level department; click Add child on a department row to create a child department.")}
+            </div>
+          </div>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => {
+              setDepartmentParentId("");
+              setDepartmentName("");
+              departmentNameInputRef.current?.focus();
+            }}
+          >
+            <Plus className="mr-1.5 h-3.5 w-3.5" />
+            {t("添加一级部门", "Add top-level")}
+          </Button>
+        </div>
+        {departmentRows.length === 0 ? (
+          <div className="rounded-md border border-dashed border-border bg-muted/30 px-3 py-4 text-sm text-muted-foreground">
+            {t("还没有部门。先创建一个一级部门，再从部门行添加下级部门。", "No departments yet. Create a top-level department first, then add child departments from department rows.")}
+          </div>
+        ) : (
+          <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-3">
+            {departmentRows.map(({ department, childCount, depth, parentName }) => (
+              <div key={department.id} className="rounded-md border border-border bg-background px-3 py-2">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0" style={{ paddingLeft: `${Math.min(depth, 4) * 12}px` }}>
+                    <div className="truncate text-sm font-medium">{department.name}</div>
+                    <div className="truncate text-xs text-muted-foreground">
+                      {t("上级", "Parent")}: {parentName}
+                    </div>
+                  </div>
+                  <span className="shrink-0 rounded border border-border px-1.5 py-0.5 text-[10px] text-muted-foreground">
+                    {t("下级", "Children")} {childCount}
+                  </span>
+                </div>
+                <div className="mt-2 flex justify-end">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => startChildDepartment(department.id)}
+                  >
+                    <Plus className="mr-1.5 h-3.5 w-3.5" />
+                    {t("添加下级", "Add child")}
+                  </Button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
       {activePositions.length > 0 ? (
         <div className="mb-3 grid shrink-0 gap-2 md:grid-cols-2 xl:grid-cols-3">
