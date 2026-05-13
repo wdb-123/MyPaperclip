@@ -418,12 +418,6 @@ export function OrgChart() {
     setChildDepartmentName("");
   }, []);
 
-  const startPositionDraft = useCallback((departmentId: string) => {
-    setPositionDraftDepartmentId(departmentId);
-    setPositionDraftName("");
-    setPositionDraftReportsToId("");
-  }, []);
-
   const startAssignmentDraft = useCallback((positionId: string) => {
     setAssignmentDraftPositionId(positionId);
     setAssignmentDraftPrincipalType("user");
@@ -458,6 +452,26 @@ export function OrgChart() {
     const lineageIds = new Set(getDepartmentLineageIds(departmentId));
     return activePositions.filter((position) => position.departmentId && lineageIds.has(position.departmentId));
   }, [activePositions, getDepartmentLineageIds]);
+
+  const getDefaultReportsToPositionId = useCallback((departmentId: string) => {
+    const lineageIds = getDepartmentLineageIds(departmentId);
+    for (const ancestorDepartmentId of lineageIds.slice(1)) {
+      const lead = activePositions.find(
+        (position) => position.departmentId === ancestorDepartmentId && !position.reportsToPositionId,
+      );
+      if (lead) return lead.id;
+
+      const fallback = activePositions.find((position) => position.departmentId === ancestorDepartmentId);
+      if (fallback) return fallback.id;
+    }
+    return "";
+  }, [activePositions, getDepartmentLineageIds]);
+
+  const startPositionDraft = useCallback((departmentId: string) => {
+    setPositionDraftDepartmentId(departmentId);
+    setPositionDraftName("");
+    setPositionDraftReportsToId(getDefaultReportsToPositionId(departmentId));
+  }, [getDefaultReportsToPositionId]);
 
   const formatPositionWithDepartment = useCallback((position: Position) => {
     const departmentName = position.departmentId
